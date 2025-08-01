@@ -1,4 +1,19 @@
+use std::{sync::mpsc, thread};
+
 use tray_icon::{menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem}, TrayIconBuilder, TrayIconEvent};
+
+mod fans;
+
+pub enum TrayMessage {
+    PerformanceMode,
+    DefaultMode,
+    FansMax,
+    FansAuto,
+    FansBios,
+    UpdateStatus,
+    Exit,
+}
+
 
 fn main() {
     gtk::init().expect("Failed to initialize GTK.");
@@ -41,46 +56,60 @@ fn main() {
         .build()
         .expect("Failed to create tray icon");
 
-    // Handle menu events
     let menu_channel = MenuEvent::receiver();
     let _tray_channel = TrayIconEvent::receiver();
 
-    std::thread::spawn(move || {
-        loop {
-            if let Ok(event) = menu_channel.recv() {
-                match event.id.0.as_str() {
-                    "Max Performance" => {
-                        println!("Setting fan to max performance");
-                        set_fan_mode("max");
-                    },
-                    "Auto Control" => {
-                        println!("Setting fan to auto control");
-                        set_fan_mode("auto");
-                    },
-                    "BIOS Default" => {
-                        println!("Setting fan to BIOS default");
-                        set_fan_mode("bios");
-                    },
-                    "Quit" => {
-                        println!("Quitting application");
-                        gtk::main_quit();
-                        break;
-                    },
-                    _ => {}
+
+    let (tx, rx) = mpsc::channel();
+
+    let clone_fan_max_id = fan_max.id().clone();
+    let clone_fan_auto_id = fan_auto.id().clone();
+    let clone_fan_bios_id = fan_bios.id().clone();
+    let quit_id = quit.id().clone();
+
+    thread::spawn(move || {
+        while let Ok(event) = menu_channel.recv() {
+            if *event.id() == clone_fan_max_id {
+                let _ = tx.send(TrayMessage::FansMax);
+            } else if *event.id() == clone_fan_auto_id {
+                let _ = tx.send(TrayMessage::FansAuto);
+            } else if *event.id() == clone_fan_bios_id {
+                let _ = tx.send(TrayMessage::FansBios);
+            } else if *event.id() == quit_id {
+                let _ = tx.send(TrayMessage::Exit);
+                gtk::main_quit();
+            }
+        }
+    });
+
+    // setup handler for rx
+    thread::spawn(move || {
+        while let Ok(message) = rx.recv() {
+            match message {
+                TrayMessage::PerformanceMode => {
+                    println!("Switching to Performance Mode...");
+                }
+                TrayMessage::DefaultMode => {
+                    println!("Switching to Default Mode...");
+                }
+                TrayMessage::FansMax => {
+                    println!("Setting fans to Max Performance...");
+                }
+                TrayMessage::FansAuto => {
+                    println!("Setting fans to Auto Control...");
+                }
+                TrayMessage::FansBios => {
+                    println!("Setting fans to BIOS Default...");
+                }
+                TrayMessage::UpdateStatus => {
+                    println!("Updating status...");
+                }
+                TrayMessage::Exit => {
+                    gtk::main_quit();
                 }
             }
         }
     });
 
     gtk::main();
-}
-
-fn set_fan_mode(mode: &str) {
-    // TODO: Implement actual fan control logic
-    match mode {
-        "max" => println!("Fan set to maximum performance"),
-        "auto" => println!("Fan set to automatic control"),
-        "bios" => println!("Fan set to BIOS default"),
-        _ => println!("Unknown fan mode: {}", mode),
-    }
 }
