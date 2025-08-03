@@ -8,8 +8,8 @@ use tracing::{debug, error, info, instrument, warn};
 
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
 const TEMP_THRESHOLD: i32 = 75000; // 75°C in millicelsius
-const MAX_FAN_WRITE_INTERVAL: Duration = Duration::from_secs(90);
-const TEMP_CHECK_INTERVAL: Duration = Duration::from_secs(2);
+const MAX_FAN_WRITE_INTERVAL: Duration = Duration::from_secs(100); // <120 seconds
+const TEMP_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 const CONSECUTIVE_HIGH_TEMP_LIMIT: u32 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -51,9 +51,9 @@ impl AppState {
 impl std::fmt::Display for FanStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FanStatus::Max => write!(f, "Fans: Max"),
-            FanStatus::Auto => write!(f, "Fans: Auto"),
-            FanStatus::Bios => write!(f, "Fans: Bios"),
+            FanStatus::Max => write!(f, "Max"),
+            FanStatus::Auto => write!(f, "Auto"),
+            FanStatus::Bios => write!(f, "Bios"),
         }
     }
 }
@@ -79,8 +79,6 @@ fn set_fan_mode(mode: ActualFanMode) -> Result<(), std::io::Error> {
     };
     
     info!("Setting actual fan mode to: {:?} (writing value: {})", mode, value);
-    
-    // Use shell expansion to find the correct path
     let command = format!("echo {} | sudo tee /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable", value);
     debug!("Executing command: {}", command);
     
@@ -105,7 +103,6 @@ fn set_fan_mode(mode: ActualFanMode) -> Result<(), std::io::Error> {
 
 #[instrument(level = "debug")]
 fn read_temperature() -> Result<i32, std::io::Error> {
-    // run a cat with glob to find the correct thermal zone file
     let paths: Vec<_> = glob::glob(TEMP_SENSOR_PATH)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?
         .filter_map(Result::ok)
@@ -244,7 +241,10 @@ pub fn set_fan_status(state: Arc<Mutex<AppState>>, new_mode: FanStatus) -> Resul
     
     let actual_mode_to_set = match new_mode {
         FanStatus::Max => ActualFanMode::Max,
-        FanStatus::Auto => ActualFanMode::Max, // Auto starts with max fans for immediate response
+        FanStatus::Auto => match read_temperature() {
+            Ok(temp) if temp > TEMP_THRESHOLD => ActualFanMode::Max,
+            _ => ActualFanMode::Bios,
+        },
         FanStatus::Bios => ActualFanMode::Bios,
     };
     
@@ -291,7 +291,7 @@ pub fn set_fan_status(state: Arc<Mutex<AppState>>, new_mode: FanStatus) -> Resul
 
 pub fn fan_status_string(state: Arc<Mutex<AppState>>) -> String {
     let state_guard = state.lock().unwrap();
-    let status_string = format!("Fan State: {}", state_guard.user_mode);
+    let status_string = format!("Fans: {}", state_guard.user_mode);
     debug!("Fan status string: '{}' (state: {:?})", status_string, *state_guard);
     status_string
 }

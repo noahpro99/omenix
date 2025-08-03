@@ -66,9 +66,9 @@ fn main() {
     let fan_status = MenuItem::new(fans::fan_status_string(app_state.clone()).as_str(), false, None);
     debug!("Created fan status menu item: {}", fans::fan_status_string(app_state.clone()));
     let separator1 = PredefinedMenuItem::separator();
-    let fan_max = MenuItem::new("Max Performance", true, None);
-    let fan_auto = MenuItem::new("Auto Control", true, None);
-    let fan_bios = MenuItem::new("BIOS Default", true, None);
+    let fan_max = MenuItem::new("Fans Max", true, None);
+    let fan_auto = MenuItem::new("Fans Auto", true, None);
+    let fan_bios = MenuItem::new("Fans BIOS", true, None);
     let separator2 = PredefinedMenuItem::separator();
     let quit = MenuItem::new("Quit", true, None);
 

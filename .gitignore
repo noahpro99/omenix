@@ -15,3 +15,5 @@
 #/target
 .direnv
 .vscode
+.env
+!.envrc
