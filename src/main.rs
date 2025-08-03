@@ -41,13 +41,11 @@ fn main() {
     settings.set_gtk_application_prefer_dark_theme(true);
     debug!("GTK initialized with dark theme preference");
     
-    let path = "assets/icon.png"; // Replace with your icon path
+    let path = "assets/icon.png";
 
-    // Initialize app state
     let app_state = Arc::new(Mutex::new(AppState::new()));
     info!("App state initialized: {:?}", app_state.lock().unwrap());
     
-    // Start the fan control background thread
     fans::start_fan_control_thread(app_state.clone());
 
     let (icon_rgba, icon_width, icon_height) = {
