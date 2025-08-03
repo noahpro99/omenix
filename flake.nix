@@ -17,19 +17,22 @@
             xdotool
             libappindicator-gtk3
             libayatana-appindicator
-            openssl
-          ];
 
-          nativeBuildInputs = with pkgs; [
-            # Build tools
             cargo
             rustc
             rust-analyzer
             clippy
             bashInteractive
             gcc
+            openssl
             pkg-config
             libiconv
+
+          ];
+
+          nativeBuildInputs = with pkgs; [
+            # Build tools
+
           ];
 
           shellHook = ''

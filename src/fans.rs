@@ -1,9 +1,9 @@
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use std::thread;
 use std::fs;
 use std::io::Read;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
@@ -21,14 +21,14 @@ pub enum FanStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ActualFanMode {
-    Max,    // Writing 0 to device
-    Bios,   // Writing 2 to device
+    Max,  // Writing 0 to device
+    Bios, // Writing 2 to device
 }
 
 #[derive(Debug)]
 pub struct AppState {
-    pub user_mode: FanStatus,           // What the user selected
-    pub actual_mode: ActualFanMode,     // What's actually written to device
+    pub user_mode: FanStatus,       // What the user selected
+    pub actual_mode: ActualFanMode, // What's actually written to device
     pub last_fan_write: Option<Instant>,
     pub consecutive_high_temps: u32,
     pub temp_monitoring_active: bool,
@@ -77,16 +77,22 @@ fn set_fan_mode(mode: ActualFanMode) -> Result<(), std::io::Error> {
         ActualFanMode::Max => "0",
         ActualFanMode::Bios => "2",
     };
-    
-    info!("Setting actual fan mode to: {:?} (writing value: {})", mode, value);
-    let command = format!("echo {} | sudo tee /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable", value);
+
+    info!(
+        "Setting actual fan mode to: {:?} (writing value: {})",
+        mode, value
+    );
+    let command = format!(
+        "echo {} | sudo tee /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable",
+        value
+    );
     debug!("Executing command: {}", command);
-    
+
     let output = std::process::Command::new("sh")
         .arg("-c")
         .arg(&command)
         .output()?;
-    
+
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         info!("Successfully set fan mode, output: {}", stdout.trim());
@@ -95,8 +101,8 @@ fn set_fan_mode(mode: ActualFanMode) -> Result<(), std::io::Error> {
         let error_msg = String::from_utf8_lossy(&output.stderr);
         error!("Failed to set fan mode: {}", error_msg);
         Err(std::io::Error::new(
-            std::io::ErrorKind::Other, 
-            format!("Failed to set fan mode: {}", error_msg)
+            std::io::ErrorKind::Other,
+            format!("Failed to set fan mode: {}", error_msg),
         ))
     }
 }
@@ -109,18 +115,28 @@ fn read_temperature() -> Result<i32, std::io::Error> {
         .collect();
 
     if paths.is_empty() {
-        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "No temperature sensor found"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No temperature sensor found",
+        ));
     }
 
-    let max_temp = paths.iter().filter_map(|path| {
-        let mut file = fs::File::open(path).ok()?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).ok()?;
-        contents.trim().parse::<i32>().ok()
-    }).max().ok_or_else(|| {
-        error!("Failed to read temperature from any sensor");
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to read temperature")
-    })?;
+    let max_temp = paths
+        .iter()
+        .filter_map(|path| {
+            let mut file = fs::File::open(path).ok()?;
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).ok()?;
+            contents.trim().parse::<i32>().ok()
+        })
+        .max()
+        .ok_or_else(|| {
+            error!("Failed to read temperature from any sensor");
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Failed to read temperature",
+            )
+        })?;
 
     debug!("Max temperature read: {:?}°C", max_temp / 1000);
     Ok(max_temp)
@@ -132,34 +148,40 @@ pub fn start_fan_control_thread(state: Arc<Mutex<AppState>>) {
         info!("Fan control thread started, entering main loop");
         loop {
             thread::sleep(TEMP_CHECK_INTERVAL);
-            
+
             let mut should_handle_max_mode = false;
             let mut should_handle_auto_mode = false;
             let user_mode;
             let state_snapshot;
-            
+
             // Read current state
             {
                 let state_guard = state.lock().unwrap();
                 user_mode = state_guard.user_mode;
                 state_snapshot = format!("{:?}", *state_guard);
                 debug!("Current state: {}", state_snapshot);
-                
+
                 if user_mode == FanStatus::Max {
                     if let Some(last_write) = state_guard.last_fan_write {
                         let elapsed = last_write.elapsed();
                         if elapsed >= MAX_FAN_WRITE_INTERVAL {
-                            debug!("Max mode interval reached: {:?} >= {:?}", elapsed, MAX_FAN_WRITE_INTERVAL);
+                            debug!(
+                                "Max mode interval reached: {:?} >= {:?}",
+                                elapsed, MAX_FAN_WRITE_INTERVAL
+                            );
                             should_handle_max_mode = true;
                         } else {
-                            debug!("Max mode interval not reached: {:?} < {:?}", elapsed, MAX_FAN_WRITE_INTERVAL);
+                            debug!(
+                                "Max mode interval not reached: {:?} < {:?}",
+                                elapsed, MAX_FAN_WRITE_INTERVAL
+                            );
                         }
                     } else {
                         debug!("Max mode: no previous write, will write now");
                         should_handle_max_mode = true;
                     }
                 }
-                
+
                 if user_mode == FanStatus::Auto && state_guard.temp_monitoring_active {
                     debug!("Auto mode: temperature monitoring active");
                     should_handle_auto_mode = true;
@@ -167,7 +189,7 @@ pub fn start_fan_control_thread(state: Arc<Mutex<AppState>>) {
                     debug!("Auto mode: temperature monitoring NOT active");
                 }
             }
-            
+
             // Handle max mode timing
             if should_handle_max_mode {
                 info!("Handling max mode timing - writing to device");
@@ -177,10 +199,13 @@ pub fn start_fan_control_thread(state: Arc<Mutex<AppState>>) {
                     let mut state_guard = state.lock().unwrap();
                     state_guard.last_fan_write = Some(Instant::now());
                     state_guard.actual_mode = ActualFanMode::Max;
-                    info!("Max mode write successful, updated state: {:?}", *state_guard);
+                    info!(
+                        "Max mode write successful, updated state: {:?}",
+                        *state_guard
+                    );
                 }
             }
-            
+
             // Handle auto mode temperature monitoring
             if should_handle_auto_mode {
                 debug!("Handling auto mode temperature check");
@@ -188,34 +213,46 @@ pub fn start_fan_control_thread(state: Arc<Mutex<AppState>>) {
                     Ok(temp) => {
                         let temp_celsius = temp / 1000;
                         let threshold_celsius = TEMP_THRESHOLD / 1000;
-                        debug!("Temperature check: {}°C (threshold: {}°C)", temp_celsius, threshold_celsius);
-                        
+                        debug!(
+                            "Temperature check: {}°C (threshold: {}°C)",
+                            temp_celsius, threshold_celsius
+                        );
+
                         let mut state_guard = state.lock().unwrap();
-                        
+
                         if temp > TEMP_THRESHOLD {
                             state_guard.consecutive_high_temps += 1;
-                            warn!("High temperature detected: {}°C (count: {}/{})", 
-                                   temp_celsius, state_guard.consecutive_high_temps, CONSECUTIVE_HIGH_TEMP_LIMIT);
-                            
+                            warn!(
+                                "High temperature detected: {}°C (count: {}/{})",
+                                temp_celsius,
+                                state_guard.consecutive_high_temps,
+                                CONSECUTIVE_HIGH_TEMP_LIMIT
+                            );
+
                             if state_guard.consecutive_high_temps >= CONSECUTIVE_HIGH_TEMP_LIMIT {
                                 info!("Temperature threshold exceeded, switching to max fans");
                                 state_guard.actual_mode = ActualFanMode::Max;
                                 state_guard.consecutive_high_temps = 0;
                                 state_guard.last_fan_write = Some(Instant::now());
                                 drop(state_guard);
-                                
+
                                 if let Err(e) = set_fan_mode(ActualFanMode::Max) {
                                     error!("Failed to set max fan mode: {}", e);
                                 } else {
-                                    info!("Successfully switched to max fan mode due to high temperature");
+                                    info!(
+                                        "Successfully switched to max fan mode due to high temperature"
+                                    );
                                 }
                             }
                         } else if state_guard.consecutive_high_temps > 0 {
-                            info!("Temperature normal: {}°C, switching back to BIOS", temp_celsius);
+                            info!(
+                                "Temperature normal: {}°C, switching back to BIOS",
+                                temp_celsius
+                            );
                             state_guard.actual_mode = ActualFanMode::Bios;
                             state_guard.consecutive_high_temps = 0;
                             drop(state_guard);
-                            
+
                             if let Err(e) = set_fan_mode(ActualFanMode::Bios) {
                                 error!("Failed to set bios fan mode: {}", e);
                             } else {
@@ -223,7 +260,10 @@ pub fn start_fan_control_thread(state: Arc<Mutex<AppState>>) {
                             }
                         } else {
                             state_guard.consecutive_high_temps = 0;
-                            debug!("Temperature normal: {}°C, staying in current mode", temp_celsius);
+                            debug!(
+                                "Temperature normal: {}°C, staying in current mode",
+                                temp_celsius
+                            );
                         }
                     }
                     Err(e) => {
@@ -236,9 +276,12 @@ pub fn start_fan_control_thread(state: Arc<Mutex<AppState>>) {
 }
 
 #[instrument(level = "debug", fields(new_mode = ?new_mode))]
-pub fn set_fan_status(state: Arc<Mutex<AppState>>, new_mode: FanStatus) -> Result<(), std::io::Error> {
+pub fn set_fan_status(
+    state: Arc<Mutex<AppState>>,
+    new_mode: FanStatus,
+) -> Result<(), std::io::Error> {
     info!("Setting fan status to: {:?}", new_mode);
-    
+
     let actual_mode_to_set = match new_mode {
         FanStatus::Max => ActualFanMode::Max,
         FanStatus::Auto => match read_temperature() {
@@ -247,17 +290,17 @@ pub fn set_fan_status(state: Arc<Mutex<AppState>>, new_mode: FanStatus) -> Resul
         },
         FanStatus::Bios => ActualFanMode::Bios,
     };
-    
+
     info!("Will set actual mode to: {:?}", actual_mode_to_set);
-    
+
     {
         let mut state_guard = state.lock().unwrap();
         let old_state = format!("{:?}", *state_guard);
-        
+
         state_guard.user_mode = new_mode;
         state_guard.actual_mode = actual_mode_to_set;
         state_guard.consecutive_high_temps = 0;
-        
+
         match new_mode {
             FanStatus::Max => {
                 state_guard.last_fan_write = Some(Instant::now());
@@ -275,11 +318,14 @@ pub fn set_fan_status(state: Arc<Mutex<AppState>>, new_mode: FanStatus) -> Resul
                 info!("BIOS mode: Disabled temp monitoring and cleared last_fan_write");
             }
         }
-        
+
         let new_state = format!("{:?}", *state_guard);
-        debug!("State transition:\n  From: {}\n  To:   {}", old_state, new_state);
+        debug!(
+            "State transition:\n  From: {}\n  To:   {}",
+            old_state, new_state
+        );
     }
-    
+
     let result = set_fan_mode(actual_mode_to_set);
     if let Err(ref e) = result {
         error!("Failed to set fan mode: {}", e);
@@ -292,6 +338,9 @@ pub fn set_fan_status(state: Arc<Mutex<AppState>>, new_mode: FanStatus) -> Resul
 pub fn fan_status_string(state: Arc<Mutex<AppState>>) -> String {
     let state_guard = state.lock().unwrap();
     let status_string = format!("Fans: {}", state_guard.user_mode);
-    debug!("Fan status string: '{}' (state: {:?})", status_string, *state_guard);
+    debug!(
+        "Fan status string: '{}' (state: {:?})",
+        status_string, *state_guard
+    );
     status_string
 }

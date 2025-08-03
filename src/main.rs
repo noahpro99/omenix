@@ -1,8 +1,14 @@
-use std::{sync::{mpsc, Arc, Mutex}, thread};
+use std::{
+    sync::{Arc, Mutex, mpsc},
+    thread,
+};
 
 use gtk::traits::GtkSettingsExt;
-use tray_icon::{menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem}, TrayIconBuilder, TrayIconEvent};
 use tracing::{debug, error, info, warn};
+use tray_icon::{
+    TrayIconBuilder, TrayIconEvent,
+    menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+};
 
 mod fans;
 use fans::{AppState, FanStatus};
@@ -18,13 +24,12 @@ pub enum TrayMessage {
     Exit,
 }
 
-
 fn main() {
     // Initialize tracing subscriber for structured logging
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "omenix=debug,warn".into())
+                .unwrap_or_else(|_| "omenix=debug,warn".into()),
         )
         .with_target(true)
         .with_thread_ids(true)
@@ -40,12 +45,12 @@ fn main() {
     };
     settings.set_gtk_application_prefer_dark_theme(true);
     debug!("GTK initialized with dark theme preference");
-    
+
     let path = "assets/icon.png";
 
     let app_state = Arc::new(Mutex::new(AppState::new()));
     info!("App state initialized: {:?}", app_state.lock().unwrap());
-    
+
     fans::start_fan_control_thread(app_state.clone());
 
     let (icon_rgba, icon_width, icon_height) = {
@@ -61,8 +66,15 @@ fn main() {
     let icon = tray_icon::Icon::from_rgba(icon_rgba, icon_width, icon_height)
         .expect("Failed to open icon");
 
-    let fan_status = MenuItem::new(fans::fan_status_string(app_state.clone()).as_str(), false, None);
-    debug!("Created fan status menu item: {}", fans::fan_status_string(app_state.clone()));
+    let fan_status = MenuItem::new(
+        fans::fan_status_string(app_state.clone()).as_str(),
+        false,
+        None,
+    );
+    debug!(
+        "Created fan status menu item: {}",
+        fans::fan_status_string(app_state.clone())
+    );
     let separator1 = PredefinedMenuItem::separator();
     let fan_max = MenuItem::new("Fans Max", true, None);
     let fan_auto = MenuItem::new("Fans Auto", true, None);
@@ -78,7 +90,8 @@ fn main() {
         &fan_bios,
         &separator2,
         &quit,
-    ]).expect("Failed to create menu");
+    ])
+    .expect("Failed to create menu");
 
     let _tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
@@ -114,8 +127,10 @@ fn main() {
     let clone_fan_bios_id = fan_bios.id().clone();
     let quit_id = quit.id().clone();
 
-    debug!("Menu item IDs - Max: {:?}, Auto: {:?}, BIOS: {:?}, Quit: {:?}", 
-           clone_fan_max_id, clone_fan_auto_id, clone_fan_bios_id, quit_id);
+    debug!(
+        "Menu item IDs - Max: {:?}, Auto: {:?}, BIOS: {:?}, Quit: {:?}",
+        clone_fan_max_id, clone_fan_auto_id, clone_fan_bios_id, quit_id
+    );
 
     let tx_quit_clone = tx_quit.clone();
     thread::spawn(move || {
@@ -157,34 +172,54 @@ fn main() {
                 }
                 TrayMessage::FansMax => {
                     info!("Setting fans to Max Performance...");
-                    if let Err(e) = fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Max) {
+                    if let Err(e) =
+                        fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Max)
+                    {
                         error!("Failed to set max fan mode: {}", e);
                     } else {
                         info!("✓ Fan mode set to: Max Performance");
-                        debug!("Current app state: {:?}", app_state_for_handler.lock().unwrap());
+                        debug!(
+                            "Current app state: {:?}",
+                            app_state_for_handler.lock().unwrap()
+                        );
                     }
                 }
                 TrayMessage::FansAuto => {
                     info!("Setting fans to Auto Control...");
-                    if let Err(e) = fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Auto) {
+                    if let Err(e) =
+                        fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Auto)
+                    {
                         error!("Failed to set auto fan mode: {}", e);
                     } else {
-                        info!("✓ Fan mode set to: Auto Control (will switch between Max/BIOS based on temperature)");
-                        debug!("Current app state: {:?}", app_state_for_handler.lock().unwrap());
+                        info!(
+                            "✓ Fan mode set to: Auto Control (will switch between Max/BIOS based on temperature)"
+                        );
+                        debug!(
+                            "Current app state: {:?}",
+                            app_state_for_handler.lock().unwrap()
+                        );
                     }
                 }
                 TrayMessage::FansBios => {
                     info!("Setting fans to BIOS Default...");
-                    if let Err(e) = fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Bios) {
+                    if let Err(e) =
+                        fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Bios)
+                    {
                         error!("Failed to set bios fan mode: {}", e);
                     } else {
                         info!("✓ Fan mode set to: BIOS Default");
-                        debug!("Current app state: {:?}", app_state_for_handler.lock().unwrap());
+                        debug!(
+                            "Current app state: {:?}",
+                            app_state_for_handler.lock().unwrap()
+                        );
                     }
                 }
                 TrayMessage::UpdateStatus => {
                     info!("Updating status...");
-                    debug!("Current status: {}", fans::fan_status_string(app_state_for_handler.clone()));
+                    debug!(
+                        "Current status: {}",
+                        fans::fan_status_string(app_state_for_handler.clone())
+                    );
                 }
                 TrayMessage::Exit => {
                     info!("Exiting application...");
