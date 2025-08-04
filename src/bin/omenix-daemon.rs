@@ -8,10 +8,11 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
 use omenix::client::DAEMON_SOCKET_PATH;
-use omenix::types::{FanMode, HardwareFanMode};
+use omenix::types::{FanMode, HardwareFanMode, PerformanceMode};
 
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
 const FAN_CONTROL_PATH: &str = "/sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable";
+const PERFORMANCE_PROFILE_PATH: &str = "/sys/firmware/acpi/platform_profile";
 const TEMP_THRESHOLD: i32 = 75000; // 75°C in millicelsius
 const MAX_FAN_WRITE_INTERVAL: Duration = Duration::from_secs(100); // <120 seconds
 const TEMP_CHECK_INTERVAL: Duration = Duration::from_secs(5);
@@ -21,6 +22,7 @@ const CONSECUTIVE_HIGH_TEMP_LIMIT: u32 = 3;
 pub struct DaemonState {
     pub user_mode: FanMode,
     pub actual_mode: HardwareFanMode,
+    pub performance_mode: PerformanceMode,
     pub last_fan_write: Option<Instant>,
     pub consecutive_high_temps: u32,
     pub temp_monitoring_active: bool,
@@ -32,6 +34,7 @@ impl DaemonState {
         let state = Self {
             user_mode: FanMode::Bios,
             actual_mode: HardwareFanMode::Bios,
+            performance_mode: PerformanceMode::Balanced,
             last_fan_write: None,
             consecutive_high_temps: 0,
             temp_monitoring_active: false,
@@ -85,6 +88,23 @@ fn write_fan_mode(mode: HardwareFanMode) -> Result<(), io::Error> {
     Ok(())
 }
 
+fn write_performance_mode(mode: PerformanceMode) -> Result<(), io::Error> {
+    let value = mode.to_string(); // "balanced" or "performance"
+
+    info!("Writing performance mode: {:?} (value: {})", mode, value);
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(PERFORMANCE_PROFILE_PATH)?;
+
+    file.write_all(value.as_bytes())?;
+    file.flush()?;
+
+    info!("Successfully wrote performance mode: {:?}", mode);
+    Ok(())
+}
+
 #[instrument(level = "debug")]
 fn read_temperature() -> Result<i32, io::Error> {
     let paths: Vec<_> = glob::glob(TEMP_SENSOR_PATH)
@@ -128,6 +148,13 @@ fn handle_client_request(request: &str, state: Arc<Mutex<DaemonState>>) -> Resul
             set_fan_mode(state, mode)?;
             Ok(format!("Fan mode set to: {}", mode))
         }
+        ["set_performance", mode_str] => {
+            let mode = mode_str
+                .parse::<PerformanceMode>()
+                .map_err(|_| "Invalid performance mode")?;
+            set_performance_mode(state, mode)?;
+            Ok(format!("Performance mode set to: {}", mode))
+        }
         ["status"] => {
             let state_guard = state.lock().unwrap();
             let temp_str = match state_guard.current_temp {
@@ -135,11 +162,16 @@ fn handle_client_request(request: &str, state: Arc<Mutex<DaemonState>>) -> Resul
                 None => "Unknown".to_string(),
             };
             Ok(format!(
-                "Mode: {}, Actual: {:?}, Temp: {}",
-                state_guard.user_mode, state_guard.actual_mode, temp_str
+                "Mode: {}, Actual: {:?}, Performance: {}, Temp: {}",
+                state_guard.user_mode,
+                state_guard.actual_mode,
+                state_guard.performance_mode,
+                temp_str
             ))
         }
-        _ => Err("Invalid command. Use 'set <mode>' or 'status'".to_string()),
+        _ => Err(
+            "Invalid command. Use 'set <mode>', 'set_performance <mode>', or 'status'".to_string(),
+        ),
     }
 }
 
@@ -196,6 +228,26 @@ fn set_fan_mode(state: Arc<Mutex<DaemonState>>, new_mode: FanMode) -> Result<(),
     write_fan_mode(actual_mode_to_set).map_err(|e| format!("Failed to write fan mode: {}", e))?;
 
     info!("Successfully set fan mode to: {:?}", actual_mode_to_set);
+    Ok(())
+}
+
+fn set_performance_mode(
+    state: Arc<Mutex<DaemonState>>,
+    new_mode: PerformanceMode,
+) -> Result<(), String> {
+    info!("Setting performance mode to: {:?}", new_mode);
+
+    // Update state
+    {
+        let mut state_guard = state.lock().unwrap();
+        state_guard.performance_mode = new_mode;
+    }
+
+    // Write to platform profile
+    write_performance_mode(new_mode)
+        .map_err(|e| format!("Failed to write performance mode: {}", e))?;
+
+    info!("Successfully set performance mode to: {:?}", new_mode);
     Ok(())
 }
 

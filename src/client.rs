@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use tracing::{debug, error, info, warn};
 
-use crate::types::FanMode;
+use crate::types::{FanMode, PerformanceMode, SystemState};
 
 pub const DAEMON_SOCKET_PATH: &str = "/tmp/omenix-daemon.sock";
 
@@ -91,6 +91,80 @@ impl DaemonClient {
         }
     }
 
+    /// Set performance mode via daemon
+    pub fn set_performance_mode(&self, mode: PerformanceMode) -> Result<(), std::io::Error> {
+        info!("Setting performance mode to: {:?}", mode);
+
+        let command = format!("set_performance {}", mode);
+        let response = self.send_command(&command)?;
+
+        if response.starts_with("OK:") {
+            info!("Successfully set performance mode to: {:?}", mode);
+            Ok(())
+        } else if response.starts_with("ERROR:") {
+            let error_msg = response.strip_prefix("ERROR:").unwrap_or(&response).trim();
+            error!("Daemon error: {}", error_msg);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Daemon error: {}", error_msg),
+            ))
+        } else {
+            warn!("Unexpected response from daemon: {}", response);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unexpected response from daemon",
+            ))
+        }
+    }
+
+    /// Get current system state from daemon
+    pub fn get_current_state(&self) -> Result<SystemState, std::io::Error> {
+        debug!("Getting current state from daemon");
+
+        let response = self.send_command("status")?;
+
+        if response.starts_with("OK:") {
+            let status_data = response.strip_prefix("OK:").unwrap_or(&response).trim();
+
+            // Parse the status response: "Mode: Auto, Actual: Max, Performance: balanced, Temp: 45°C"
+            let fan_mode = if status_data.contains("Mode: Max") {
+                FanMode::Max
+            } else if status_data.contains("Mode: Auto") {
+                FanMode::Auto
+            } else {
+                FanMode::Bios
+            };
+
+            // Parse performance mode from status
+            let performance_mode = if status_data.contains("Performance: performance") {
+                PerformanceMode::Performance
+            } else {
+                PerformanceMode::Balanced
+            };
+
+            // Extract temperature if available
+            let temperature = None; // Would be parsed from daemon response
+
+            Ok(SystemState {
+                fan_mode,
+                performance_mode,
+                temperature,
+            })
+        } else if response.starts_with("ERROR:") {
+            let error_msg = response.strip_prefix("ERROR:").unwrap_or(&response).trim();
+            error!("Error getting state: {}", error_msg);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Error getting state: {}", error_msg),
+            ))
+        } else {
+            warn!("Unexpected response from daemon: {}", response);
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unexpected response from daemon",
+            ))
+        }
+    }
     /// Check if daemon is running
     pub fn is_daemon_running(&self) -> bool {
         self.get_status().is_ok()

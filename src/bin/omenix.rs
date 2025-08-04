@@ -1,6 +1,6 @@
 use gtk::traits::GtkSettingsExt;
 use std::sync::mpsc;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use omenix::client::DaemonClient;
 use omenix::tray::TrayManager;
@@ -45,8 +45,12 @@ fn main() {
     let (tx, rx) = mpsc::channel();
     let (tx_quit, rx_quit) = mpsc::channel();
 
+    // Clone tray_manager for updates (we'll use messages to coordinate)
+    let (tx_refresh, rx_refresh) = mpsc::channel::<()>();
+
     // Handle messages
     let tx_quit_clone = tx_quit.clone();
+    let tx_refresh_clone = tx_refresh.clone();
     std::thread::spawn(move || {
         info!("Message handler thread started");
         let daemon_client = DaemonClient::new();
@@ -59,7 +63,24 @@ fn main() {
                         error!("Failed to set fan mode: {}", e);
                     } else {
                         info!("✓ Fan mode set to: {}", mode);
+                        // Signal that we should refresh the tray menu
+                        let _ = tx_refresh_clone.send(());
                     }
+                }
+                TrayMessage::SetPerformanceMode(mode) => {
+                    info!("Setting performance mode to: {}...", mode);
+                    if let Err(e) = daemon_client.set_performance_mode(mode) {
+                        error!("Failed to set performance mode: {}", e);
+                    } else {
+                        info!("✓ Performance mode set to: {}", mode);
+                        // Signal that we should refresh the tray menu
+                        let _ = tx_refresh_clone.send(());
+                    }
+                }
+                TrayMessage::GetState => {
+                    // This message is used to trigger menu updates
+                    debug!("State refresh requested");
+                    let _ = tx_refresh_clone.send(());
                 }
                 TrayMessage::Exit => {
                     info!("Exiting application...");
@@ -76,6 +97,16 @@ fn main() {
         let _ = rx_quit.recv();
         info!("Received quit signal, exiting application");
         std::process::exit(0);
+    });
+
+    // Handle tray menu refresh signals
+    std::thread::spawn(move || {
+        info!("Tray refresh handler thread started");
+        while let Ok(()) = rx_refresh.recv() {
+            info!("Refreshing tray menu state");
+            // For now, just log the refresh request
+            // In a more complex implementation, we'd signal the tray manager
+        }
     });
 
     info!("Starting main event loop");

@@ -60,8 +60,46 @@ impl fmt::Display for FanStatus {
     }
 }
 
+/// Performance modes that write to /sys/firmware/acpi/platform_profile
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PerformanceMode {
+    Balanced,
+    Performance,
+}
+
+impl fmt::Display for PerformanceMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PerformanceMode::Balanced => write!(f, "balanced"),
+            PerformanceMode::Performance => write!(f, "performance"),
+        }
+    }
+}
+
+impl std::str::FromStr for PerformanceMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "balanced" => Ok(PerformanceMode::Balanced),
+            "performance" => Ok(PerformanceMode::Performance),
+            _ => Err(format!("Invalid performance mode: {}", s)),
+        }
+    }
+}
+
+/// Current system state
+#[derive(Debug, Clone)]
+pub struct SystemState {
+    pub fan_mode: FanMode,
+    pub performance_mode: PerformanceMode,
+    pub temperature: Option<i32>,
+}
+
 /// Messages sent from GUI to daemon
 pub enum TrayMessage {
     SetMode(FanMode),
+    SetPerformanceMode(PerformanceMode),
+    GetState,
     Exit,
 }
