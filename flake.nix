@@ -14,7 +14,14 @@
         pname = "omenix";
         version = "0.1.0";
 
-        src = ./.;
+        src = pkgs.lib.cleanSourceWith {
+          src = ./.;
+          filter = path: type:
+            let baseName = baseNameOf path; in
+            (pkgs.lib.cleanSourceFilter path type) ||
+            (type == "directory" && baseName == "assets") ||
+            (type == "regular" && pkgs.lib.hasSuffix ".png" baseName);
+        };
 
         cargoLock = {
           lockFile = ./Cargo.lock;
