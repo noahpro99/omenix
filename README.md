@@ -1,5 +1,7 @@
 # Omenix
 
+![Icon](assets/icon.png)
+
 Fan control application for HP Omen laptops with system tray integration.
 
 ![Image](readme-assets/image.png)
