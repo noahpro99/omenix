@@ -4,7 +4,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::types::FanMode;
 
-const DAEMON_SOCKET_PATH: &str = "/tmp/omenix-daemon.sock";
+pub const DAEMON_SOCKET_PATH: &str = "/tmp/omenix-daemon.sock";
 
 /// Client for communicating with the daemon
 pub struct DaemonClient;

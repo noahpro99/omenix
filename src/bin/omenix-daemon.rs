@@ -7,11 +7,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
+use omenix::client::DAEMON_SOCKET_PATH;
 use omenix::types::{FanMode, HardwareFanMode};
 
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
 const FAN_CONTROL_PATH: &str = "/sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable";
-const DAEMON_SOCKET_PATH: &str = "/tmp/omenix-daemon.sock";
 const TEMP_THRESHOLD: i32 = 75000; // 75°C in millicelsius
 const MAX_FAN_WRITE_INTERVAL: Duration = Duration::from_secs(100); // <120 seconds
 const TEMP_CHECK_INTERVAL: Duration = Duration::from_secs(5);
