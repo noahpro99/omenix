@@ -14,7 +14,7 @@ const FAN_BIOS_ID: &str = "fan_bios";
 const QUIT_ID: &str = "quit";
 
 pub struct TrayManager {
-    tray_icon: tray_icon::TrayIcon,
+    _tray_icon: tray_icon::TrayIcon,
 }
 
 impl TrayManager {
@@ -46,7 +46,9 @@ impl TrayManager {
 
         info!("System tray icon created successfully");
 
-        Ok(Self { tray_icon })
+        Ok(Self {
+            _tray_icon: tray_icon,
+        })
     }
 
     pub fn start_event_loop(

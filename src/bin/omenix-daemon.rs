@@ -7,8 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
-mod types;
-use types::{FanMode, HardwareFanMode};
+use omenix::types::{FanMode, HardwareFanMode};
 
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
 const FAN_CONTROL_PATH: &str = "/sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable";

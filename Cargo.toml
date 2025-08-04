@@ -3,14 +3,6 @@ name = "omenix"
 version = "0.1.0"
 edition = "2024"
 
-[[bin]]
-name = "omenix"
-path = "src/main.rs"
-
-[[bin]]
-name = "omenix-daemon"
-path = "src/daemon.rs"
-
 [dependencies]
 gtk = "0.18.2"
 image = "0.25.6"
