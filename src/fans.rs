@@ -84,9 +84,29 @@ fn set_fan_mode(mode: ActualFanMode) -> Result<(), std::io::Error> {
         "Setting actual fan mode to: {:?} (writing value: {})",
         mode, value
     );
+    let command = format!(
+        "echo {} | sudo tee /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable",
+        value
+    );
+    debug!("Executing command: {}", command);
 
-    let auth_handler = AuthHandler::new();
-    auth_handler.execute_privileged(value)
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&command)
+        .output()?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        info!("Successfully set fan mode, output: {}", stdout.trim());
+        Ok(())
+    } else {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        error!("Failed to set fan mode: {}", error_msg);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to set fan mode: {}", error_msg),
+        ))
+    }
 }
 
 #[instrument(level = "debug")]

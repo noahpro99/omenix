@@ -17,4 +17,3 @@
 .vscode
 .env
 !.envrc
-result
