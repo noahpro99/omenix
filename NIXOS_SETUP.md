@@ -18,14 +18,14 @@ To enable Omenix fan control on NixOS, add the following to your `configuration.
       modules = [
         # Import the Omenix module
         omenix.nixosModules.default
-        
+
         {
           # Enable Omenix service
           services.omenix.enable = true;
-          
+
           # Ensure your user is in the wheel group for polkit authentication
           users.users.your-username.extraGroups = [ "wheel" ];
-          
+
           # Optional: Install the package for all users
           environment.systemPackages = [ omenix.packages.x86_64-linux.default ];
         }
@@ -52,7 +52,7 @@ If you're not using flakes, you can manually configure the required components:
 {
   # Enable polkit
   security.polkit.enable = true;
-  
+
   # Add polkit rule for omenix
   security.polkit.extraConfig = ''
     polkit.addRule(function(action, subject) {
@@ -62,7 +62,7 @@ If you're not using flakes, you can manually configure the required components:
         }
     });
   '';
-  
+
   # Ensure pkexec is setuid root
   security.wrappers.pkexec = {
     owner = "root";
@@ -71,10 +71,10 @@ If you're not using flakes, you can manually configure the required components:
     setgid = false;
     source = "${pkgs.polkit}/bin/pkexec";
   };
-  
+
   # Set environment variable for omenix
   environment.variables.PKEXEC_PATH = "/run/wrappers/bin/pkexec";
-  
+
   # Add your user to wheel group
   users.users.your-username.extraGroups = [ "wheel" ];
 }
@@ -106,11 +106,13 @@ groups $USER | grep wheel
 ### If fan control still doesn't work:
 
 1. **Restart polkit service**:
+
    ```bash
    sudo systemctl restart polkit
    ```
 
 2. **Check polkit authentication agent**:
+
    ```bash
    systemctl --user status polkit-kde-agent
    # or

@@ -31,6 +31,7 @@ The application requires polkit for secure privilege escalation. Ensure:
 4. **Authentication agent**: A polkit authentication agent must be running (part of most desktop environments)
 
 Check your setup:
+
 ```bash
 # Verify polkit is installed
 which pkexec
@@ -51,6 +52,7 @@ pkexec echo "Polkit test successful"
 ### Option 1: Nix Flakes (Recommended)
 
 #### Quick Install
+
 ```bash
 # Install directly from GitHub
 nix profile install github:noahpro99/omenix
@@ -77,7 +79,7 @@ Add to your NixOS configuration:
         omenix.nixosModules.default
         {
           services.omenix.enable = true;
-          
+
           # Optional: Add your user to wheel group for polkit access
           users.users.your-username.extraGroups = [ "wheel" ];
         }
@@ -95,14 +97,14 @@ Add to your NixOS configuration:
     home-manager.url = "github:nix-community/home-manager";
     omenix.url = "github:noahpro99/omenix";
   };
-  
+
   outputs = { home-manager, omenix, ... }: {
     homeConfigurations.your-username = home-manager.lib.homeManagerConfiguration {
       # ... your existing config ...
       modules = [
         {
           home.packages = [ omenix.packages.x86_64-linux.default ];
-          
+
           # Auto-start with desktop session (optional)
           systemd.user.services.omenix = {
             Unit = {
@@ -183,11 +185,13 @@ The application uses a secure architecture:
 ## Troubleshooting
 
 ### Permission Issues
+
 - Ensure your user is in the `wheel` group: `groups $USER`
 - On NixOS, add yourself to wheel group in configuration
 - Verify polkit is running: `systemctl status polkit`
 
 ### pkexec setuid Issues
+
 If you see "pkexec must be setuid root":
 
 ```bash
@@ -205,7 +209,9 @@ sudo chmod u+s $(which pkexec)
 ```
 
 ### NixOS-specific Issues
+
 For NixOS users, ensure your configuration includes:
+
 ```nix
 {
   security.polkit.enable = true;
@@ -214,16 +220,19 @@ For NixOS users, ensure your configuration includes:
 ```
 
 ### Fan Control Not Working
+
 - Check HP WMI interface: `ls /sys/devices/platform/hp-wmi/hwmon/`
 - Verify hardware support: `cat /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable`
 - Check system logs: `journalctl -f` while running the application
 
 ### GUI Authentication Issues
+
 - Ensure a polkit authentication agent is running
 - On minimal setups, install: `polkit-gnome`, `lxpolkit`, or equivalent
 - For NixOS: `security.polkit.enable = true;` and ensure desktop environment includes auth agent
 
 ### Nix-specific Issues
+
 - Update flake inputs: `nix flake update`
 - Clear build cache: `nix store gc`
 - Rebuild with verbose output: `nix build --verbose`
@@ -231,20 +240,23 @@ For NixOS users, ensure your configuration includes:
 ## Development
 
 ### Environment Setup
+
 ```bash
 nix develop
 ```
 
 ### Logging
+
 ```bash
 # Debug level
 RUST_LOG=omenix=debug ./target/release/omenix
 
-# Trace level  
+# Trace level
 RUST_LOG=trace cargo run
 ```
 
 ### Testing Changes
+
 ```bash
 # Build and test locally
 nix build

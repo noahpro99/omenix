@@ -7,7 +7,7 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
-      
+
       # Helper script for fan control
       omenix-fancontrol = pkgs.writeShellScript "omenix-fancontrol" ''
         #!/bin/bash
@@ -79,9 +79,9 @@
       omenix = pkgs.rustPlatform.buildRustPackage {
         pname = "omenix";
         version = "0.1.0";
-        
+
         src = ./.;
-        
+
         cargoLock = {
           lockFile = ./Cargo.lock;
         };
@@ -151,10 +151,10 @@
       };
 
       # NixOS module for system integration
-      nixosModules.default = { config, lib, pkgs, ... }: 
+      nixosModules.default = { config, lib, pkgs, ... }:
         let
           cfg = config.services.omenix;
-          
+
           # Helper script for fan control (defined here to avoid circular dependency)
           omenix-fancontrol-module = pkgs.writeShellScript "omenix-fancontrol" ''
             #!/bin/bash
@@ -223,53 +223,53 @@
           };
         in
         {
-        options.services.omenix = {
-          enable = lib.mkEnableOption "Omenix fan control service";
-          
-          package = lib.mkOption {
-            type = lib.types.package;
-            default = omenix;
-            description = "The Omenix package to use";
+          options.services.omenix = {
+            enable = lib.mkEnableOption "Omenix fan control service";
+
+            package = lib.mkOption {
+              type = lib.types.package;
+              default = omenix;
+              description = "The Omenix package to use";
+            };
+          };
+
+          config = lib.mkIf cfg.enable {
+            # Ensure polkit is enabled
+            security.polkit.enable = true;
+
+            # Install polkit policy system-wide
+            security.polkit.extraConfig = ''
+              polkit.addRule(function(action, subject) {
+                  if (action.id == "com.omenix.fancontrol.setfanmode" &&
+                      subject.isInGroup("wheel")) {
+                      return polkit.Result.YES;
+                  }
+              });
+            '';
+
+            # Install the package and policy
+            environment.systemPackages = [ cfg.package ];
+
+            # Ensure polkit policy is installed (using module version to avoid circular dependency)
+            environment.etc."polkit-1/actions/com.omenix.fancontrol.policy".source =
+              "${polkit-policy-module}/share/polkit-1/actions/com.omenix.fancontrol.policy";
+
+            # Create a symlink for the helper script in the expected location
+            environment.etc."omenix/omenix-fancontrol".source = omenix-fancontrol-module;
+
+            # Ensure pkexec is setuid root - this is the key fix!
+            security.wrappers.pkexec = {
+              owner = "root";
+              group = "root";
+              setuid = true;
+              setgid = false;
+              source = "${pkgs.polkit}/bin/pkexec";
+            };
+
+            # Set environment variable to use the wrapped pkexec
+            environment.variables.PKEXEC_PATH = "/run/wrappers/bin/pkexec";
           };
         };
-
-        config = lib.mkIf cfg.enable {
-          # Ensure polkit is enabled
-          security.polkit.enable = true;
-          
-          # Install polkit policy system-wide
-          security.polkit.extraConfig = ''
-            polkit.addRule(function(action, subject) {
-                if (action.id == "com.omenix.fancontrol.setfanmode" &&
-                    subject.isInGroup("wheel")) {
-                    return polkit.Result.YES;
-                }
-            });
-          '';
-
-          # Install the package and policy
-          environment.systemPackages = [ cfg.package ];
-          
-          # Ensure polkit policy is installed (using module version to avoid circular dependency)
-          environment.etc."polkit-1/actions/com.omenix.fancontrol.policy".source = 
-            "${polkit-policy-module}/share/polkit-1/actions/com.omenix.fancontrol.policy";
-
-          # Create a symlink for the helper script in the expected location
-          environment.etc."omenix/omenix-fancontrol".source = omenix-fancontrol-module;
-            
-          # Ensure pkexec is setuid root - this is the key fix!
-          security.wrappers.pkexec = {
-            owner = "root";
-            group = "root";
-            setuid = true;
-            setgid = false;
-            source = "${pkgs.polkit}/bin/pkexec";
-          };
-          
-          # Set environment variable to use the wrapped pkexec
-          environment.variables.PKEXEC_PATH = "/run/wrappers/bin/pkexec";
-        };
-      };
 
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = with pkgs; [

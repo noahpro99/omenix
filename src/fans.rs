@@ -141,16 +141,17 @@ fn set_fan_mode(mode: ActualFanMode) -> Result<(), std::io::Error> {
     } else {
         let error_msg = String::from_utf8_lossy(&output.stderr);
         error!("Failed to set fan mode: {}", error_msg);
-        
+
         // Check if the error is due to polkit cancellation
-        if error_msg.contains("Request dismissed") || error_msg.contains("Operation was cancelled") {
+        if error_msg.contains("Request dismissed") || error_msg.contains("Operation was cancelled")
+        {
             warn!("User cancelled the authentication request");
             return Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "Authentication cancelled by user",
             ));
         }
-        
+
         // Check if pkexec is not setuid root
         if error_msg.contains("pkexec must be setuid root") {
             error!("pkexec is not properly configured - it must be setuid root");
@@ -160,7 +161,7 @@ fn set_fan_mode(mode: ActualFanMode) -> Result<(), std::io::Error> {
                 "pkexec is not setuid root. Please install system polkit or use NixOS module.",
             ));
         }
-        
+
         Err(std::io::Error::new(
             std::io::ErrorKind::Other,
             format!("Failed to set fan mode: {}", error_msg),
