@@ -6,6 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::auth::AuthHandler;
+
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
 const TEMP_THRESHOLD: i32 = 75000; // 75°C in millicelsius
 const MAX_FAN_WRITE_INTERVAL: Duration = Duration::from_secs(100); // <120 seconds
@@ -83,90 +85,8 @@ fn set_fan_mode(mode: ActualFanMode) -> Result<(), std::io::Error> {
         mode, value
     );
 
-    // Get the helper script path from environment variable or use default
-    let helper_path = std::env::var("OMENIX_HELPER_PATH")
-        .unwrap_or_else(|_| "/etc/omenix/omenix-fancontrol".to_string());
-
-    // Get pkexec path - try environment variable first, then system paths
-    let pkexec_path = std::env::var("PKEXEC_PATH")
-        .or_else(|_| {
-            // Check common system locations for setuid pkexec
-            for path in ["/usr/bin/pkexec", "/bin/pkexec", "/usr/local/bin/pkexec"] {
-                if let Ok(metadata) = std::fs::metadata(path) {
-                    // Check if file is setuid (mode & 0o4000 != 0)
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        if metadata.permissions().mode() & 0o4000 != 0 {
-                            debug!("Found setuid pkexec at: {}", path);
-                            return Ok(path.to_string());
-                        } else {
-                            warn!("Found pkexec at {} but it's not setuid", path);
-                        }
-                    }
-                    #[cfg(not(unix))]
-                    {
-                        return Ok(path.to_string());
-                    }
-                }
-            }
-            Err(std::env::VarError::NotPresent)
-        })
-        .unwrap_or_else(|_| {
-            warn!("No setuid pkexec found, falling back to PATH");
-            "pkexec".to_string()
-        });
-
-    debug!("Using pkexec at: {}", pkexec_path);
-    debug!("Using helper script at: {}", helper_path);
-
-    // Verify helper script exists
-    if !std::path::Path::new(&helper_path).exists() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("Helper script not found at: {}", helper_path),
-        ));
-    }
-
-    // Use polkit to authenticate and run the fan control script
-    let output = std::process::Command::new(&pkexec_path)
-        .arg(&helper_path)
-        .arg(value)
-        .output()?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        info!("Successfully set fan mode, output: {}", stdout.trim());
-        Ok(())
-    } else {
-        let error_msg = String::from_utf8_lossy(&output.stderr);
-        error!("Failed to set fan mode: {}", error_msg);
-
-        // Check if the error is due to polkit cancellation
-        if error_msg.contains("Request dismissed") || error_msg.contains("Operation was cancelled")
-        {
-            warn!("User cancelled the authentication request");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "Authentication cancelled by user",
-            ));
-        }
-
-        // Check if pkexec is not setuid root
-        if error_msg.contains("pkexec must be setuid root") {
-            error!("pkexec is not properly configured - it must be setuid root");
-            error!("Current pkexec: {}", pkexec_path);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                "pkexec is not setuid root. Please install system polkit or use NixOS module.",
-            ));
-        }
-
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to set fan mode: {}", error_msg),
-        ))
-    }
+    let auth_handler = AuthHandler::new();
+    auth_handler.execute_privileged(value)
 }
 
 #[instrument(level = "debug")]

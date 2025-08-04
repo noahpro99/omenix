@@ -1,6 +1,82 @@
-# Omenix Fan Control
+# Omenix - HP Omen Fan Control
 
-A system tray application for controlling HP Omen laptop fan modes with GUI authentication using polkit, built with Nix for easy deployment.
+A clean, modular fan control application for HP Omen laptops with system tray integration and secure authentication.
+
+## Architecture
+
+This application has been reorganized into separate, focused modules:
+
+### Core Modules
+
+- **`src/main.rs`** - Application entry point and message handling
+- **`src/fans.rs`** - Fan control logic and temperature monitoring  
+- **`src/auth.rs`** - Authentication and privilege escalation via polkit
+- **`src/tray.rs`** - System tray GUI and menu management
+
+### Key Features
+
+- **Modular Design**: Each component has a single responsibility
+- **Secure Authentication**: Uses polkit for privilege escalation
+- **Temperature Monitoring**: Automatic fan control based on thermal thresholds
+- **System Tray Integration**: Clean, minimal GUI
+- **NixOS Integration**: Full system integration via flake
+
+## Building
+
+### Development
+```bash
+cargo build
+cargo run
+```
+
+### With Nix
+```bash
+nix build
+nix run
+```
+
+### NixOS Integration
+Add to your `configuration.nix`:
+```nix
+{
+  inputs.omenix.url = "github:noahpro99/omenix";
+  
+  # In your system configuration
+  services.omenix.enable = true;
+}
+```
+
+## Requirements
+
+1. **HP Omen laptop** with WMI interface
+2. **Polkit** with setuid pkexec 
+3. **User in wheel group** for authentication
+4. **GTK3 runtime** for system tray
+
+## Fan Modes
+
+- **Max**: Maximum fan speed (0)
+- **Auto**: Automatic switching based on temperature
+- **BIOS**: Hardware default behavior (2)
+
+## Architecture Benefits
+
+The reorganized codebase provides:
+
+- **Separation of Concerns**: GUI, auth, and fan logic are isolated
+- **Testability**: Each module can be tested independently  
+- **Maintainability**: Clear interfaces between components
+- **Security**: Authentication logic is centralized and auditable
+- **Reusability**: Modules can be reused in other contexts
+
+## Development
+
+The flake provides a complete development environment:
+```bash
+nix develop
+```
+
+This sets up all required dependencies and environment variables.
 
 ## Features
 
