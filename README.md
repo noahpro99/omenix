@@ -36,7 +36,7 @@ omenix
 if you have a desktop environment like hyprland,
 
 ```
-exec-once omenix
+exec-once = omenix
 ```
 
 ### Non-NixOS with Nix Package Manager
