@@ -2,37 +2,9 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use tracing::{debug, error, info, warn};
 
+use crate::types::FanMode;
+
 const DAEMON_SOCKET_PATH: &str = "/tmp/omenix-daemon.sock";
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FanStatus {
-    Max,
-    Auto,
-    Bios,
-}
-
-impl std::fmt::Display for FanStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FanStatus::Max => write!(f, "Max"),
-            FanStatus::Auto => write!(f, "Auto"),
-            FanStatus::Bios => write!(f, "Bios"),
-        }
-    }
-}
-
-impl std::str::FromStr for FanStatus {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "max" => Ok(FanStatus::Max),
-            "auto" => Ok(FanStatus::Auto),
-            "bios" => Ok(FanStatus::Bios),
-            _ => Err(()),
-        }
-    }
-}
 
 /// Client for communicating with the daemon
 pub struct DaemonClient;
@@ -68,7 +40,7 @@ impl DaemonClient {
     }
 
     /// Set fan mode via daemon
-    pub fn set_fan_mode(&self, mode: FanStatus) -> Result<(), std::io::Error> {
+    pub fn set_fan_mode(&self, mode: FanMode) -> Result<(), std::io::Error> {
         info!("Setting fan mode to: {:?}", mode);
 
         let command = format!("set {}", mode.to_string().to_lowercase());

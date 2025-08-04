@@ -4,9 +4,11 @@ use tracing::{error, info};
 
 mod client;
 mod tray;
+mod types;
 
-use client::{DaemonClient, FanStatus};
-use tray::{TrayManager, TrayMessage};
+use client::DaemonClient;
+use tray::TrayManager;
+use types::TrayMessage;
 
 fn main() {
     // Initialize tracing subscriber for structured logging
@@ -55,34 +57,14 @@ fn main() {
 
         while let Ok(message) = rx.recv() {
             match message {
-                TrayMessage::FansMax => {
-                    info!("Setting fans to Max Performance...");
-                    if let Err(e) = daemon_client.set_fan_mode(FanStatus::Max) {
-                        error!("Failed to set max fan mode: {}", e);
+                TrayMessage::SetMode(mode) => {
+                    info!("Setting fan mode to: {}...", mode);
+                    if let Err(e) = daemon_client.set_fan_mode(mode) {
+                        error!("Failed to set fan mode: {}", e);
                     } else {
-                        info!("✓ Fan mode set to: Max Performance");
+                        info!("✓ Fan mode set to: {}", mode);
                     }
                 }
-                TrayMessage::FansAuto => {
-                    info!("Setting fans to Auto Control...");
-                    if let Err(e) = daemon_client.set_fan_mode(FanStatus::Auto) {
-                        error!("Failed to set auto fan mode: {}", e);
-                    } else {
-                        info!("✓ Fan mode set to: Auto Control");
-                    }
-                }
-                TrayMessage::FansBios => {
-                    info!("Setting fans to BIOS Default...");
-                    if let Err(e) = daemon_client.set_fan_mode(FanStatus::Bios) {
-                        error!("Failed to set bios fan mode: {}", e);
-                    } else {
-                        info!("✓ Fan mode set to: BIOS Default");
-                    }
-                }
-                TrayMessage::UpdateStatus => match daemon_client.get_status() {
-                    Ok(status) => info!("Current status: {}", status),
-                    Err(e) => error!("Failed to get status: {}", e),
-                },
                 TrayMessage::Exit => {
                     info!("Exiting application...");
                     let _ = tx_quit_clone.send(());

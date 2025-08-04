@@ -7,6 +7,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
+mod types;
+use types::{FanMode, HardwareFanMode};
+
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
 const FAN_CONTROL_PATH: &str = "/sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable";
 const DAEMON_SOCKET_PATH: &str = "/tmp/omenix-daemon.sock";
@@ -15,23 +18,10 @@ const MAX_FAN_WRITE_INTERVAL: Duration = Duration::from_secs(100); // <120 secon
 const TEMP_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 const CONSECUTIVE_HIGH_TEMP_LIMIT: u32 = 3;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FanMode {
-    Max,  // Writing 0 to device
-    Auto, // Temperature-based control
-    Bios, // Writing 2 to device (BIOS control)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ActualFanMode {
-    Max,  // Writing 0 to device
-    Bios, // Writing 2 to device
-}
-
 #[derive(Debug)]
 pub struct DaemonState {
     pub user_mode: FanMode,
-    pub actual_mode: ActualFanMode,
+    pub actual_mode: HardwareFanMode,
     pub last_fan_write: Option<Instant>,
     pub consecutive_high_temps: u32,
     pub temp_monitoring_active: bool,
@@ -42,7 +32,7 @@ impl DaemonState {
     pub fn new() -> Self {
         let state = Self {
             user_mode: FanMode::Bios,
-            actual_mode: ActualFanMode::Bios,
+            actual_mode: HardwareFanMode::Bios,
             last_fan_write: None,
             consecutive_high_temps: 0,
             temp_monitoring_active: false,
@@ -59,34 +49,11 @@ impl Default for DaemonState {
     }
 }
 
-impl std::fmt::Display for FanMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FanMode::Max => write!(f, "Max"),
-            FanMode::Auto => write!(f, "Auto"),
-            FanMode::Bios => write!(f, "Bios"),
-        }
-    }
-}
-
-impl std::str::FromStr for FanMode {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "max" => Ok(FanMode::Max),
-            "auto" => Ok(FanMode::Auto),
-            "bios" => Ok(FanMode::Bios),
-            _ => Err(()),
-        }
-    }
-}
-
 #[instrument(level = "debug")]
-fn write_fan_mode(mode: ActualFanMode) -> Result<(), io::Error> {
+fn write_fan_mode(mode: HardwareFanMode) -> Result<(), io::Error> {
     let value = match mode {
-        ActualFanMode::Max => "0",
-        ActualFanMode::Bios => "2",
+        HardwareFanMode::Max => "0",
+        HardwareFanMode::Bios => "2",
     };
 
     info!("Writing fan mode: {:?} (value: {})", mode, value);
@@ -151,10 +118,7 @@ fn read_temperature() -> Result<i32, io::Error> {
     Ok(max_temp)
 }
 
-fn handle_client_request(
-    request: &str,
-    state: Arc<Mutex<DaemonState>>,
-) -> Result<String, String> {
+fn handle_client_request(request: &str, state: Arc<Mutex<DaemonState>>) -> Result<String, String> {
     let parts: Vec<&str> = request.split_whitespace().collect();
 
     match parts.as_slice() {
@@ -184,15 +148,15 @@ fn set_fan_mode(state: Arc<Mutex<DaemonState>>, new_mode: FanMode) -> Result<(),
     info!("Setting fan mode to: {:?}", new_mode);
 
     let actual_mode_to_set = match new_mode {
-        FanMode::Max => ActualFanMode::Max,
+        FanMode::Max => HardwareFanMode::Max,
         FanMode::Auto => {
             // For Auto mode, check current temperature
             match read_temperature() {
-                Ok(temp) if temp > TEMP_THRESHOLD => ActualFanMode::Max,
-                _ => ActualFanMode::Bios,
+                Ok(temp) if temp > TEMP_THRESHOLD => HardwareFanMode::Max,
+                _ => HardwareFanMode::Bios,
             }
         }
-        FanMode::Bios => ActualFanMode::Bios,
+        FanMode::Bios => HardwareFanMode::Bios,
     };
 
     // Update state
@@ -283,15 +247,16 @@ fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
                 }
             }
 
-            // Handle max mode timing
+            // Handle max mode timing - CRITICAL: Must rewrite every 100 seconds
             if should_handle_max_mode {
-                info!("Handling max mode timing - writing to device");
-                if let Err(e) = write_fan_mode(ActualFanMode::Max) {
+                info!("Handling max mode timing - rewriting to maintain max fans");
+                if let Err(e) = write_fan_mode(HardwareFanMode::Max) {
                     error!("Failed to set max fan mode: {}", e);
                 } else {
                     let mut state_guard = state.lock().unwrap();
                     state_guard.last_fan_write = Some(Instant::now());
-                    state_guard.actual_mode = ActualFanMode::Max;
+                    state_guard.actual_mode = HardwareFanMode::Max;
+                    info!("✓ Max fan mode rewritten successfully");
                 }
             }
 
@@ -315,27 +280,43 @@ fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
                     );
 
                     if state_guard.consecutive_high_temps >= CONSECUTIVE_HIGH_TEMP_LIMIT
-                        && state_guard.actual_mode != ActualFanMode::Max
+                        && state_guard.actual_mode != HardwareFanMode::Max
                     {
                         info!("Temperature consistently high, switching to max fans");
                         drop(state_guard);
-                        if let Err(e) = write_fan_mode(ActualFanMode::Max) {
+                        if let Err(e) = write_fan_mode(HardwareFanMode::Max) {
                             error!("Failed to set max fan mode: {}", e);
                         } else {
                             let mut state_guard = state.lock().unwrap();
-                            state_guard.actual_mode = ActualFanMode::Max;
+                            state_guard.actual_mode = HardwareFanMode::Max;
+                            state_guard.last_fan_write = Some(Instant::now()); // Track for 100s rule
+                        }
+                    } else if state_guard.actual_mode == HardwareFanMode::Max {
+                        // In auto mode with high temp and already max - maintain 100s rule
+                        if let Some(last_write) = state_guard.last_fan_write {
+                            if last_write.elapsed() >= MAX_FAN_WRITE_INTERVAL {
+                                drop(state_guard);
+                                info!("Auto mode: Rewriting max fans to maintain 100s rule");
+                                if let Err(e) = write_fan_mode(HardwareFanMode::Max) {
+                                    error!("Failed to maintain max fan mode: {}", e);
+                                } else {
+                                    let mut state_guard = state.lock().unwrap();
+                                    state_guard.last_fan_write = Some(Instant::now());
+                                }
+                            }
                         }
                     }
                 } else if state_guard.consecutive_high_temps > 0 {
                     state_guard.consecutive_high_temps = 0;
                     info!("Temperature normal, switching to BIOS control");
-                    if state_guard.actual_mode != ActualFanMode::Bios {
+                    if state_guard.actual_mode != HardwareFanMode::Bios {
                         drop(state_guard);
-                        if let Err(e) = write_fan_mode(ActualFanMode::Bios) {
+                        if let Err(e) = write_fan_mode(HardwareFanMode::Bios) {
                             error!("Failed to set BIOS fan mode: {}", e);
                         } else {
                             let mut state_guard = state.lock().unwrap();
-                            state_guard.actual_mode = ActualFanMode::Bios;
+                            state_guard.actual_mode = HardwareFanMode::Bios;
+                            state_guard.last_fan_write = None; // Clear since not in max mode
                         }
                     }
                 }
