@@ -1160,6 +1160,7 @@ dependencies = [
  "glob",
  "gtk",
  "image",
+ "libc",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

@@ -1,11 +1,11 @@
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::mpsc;
 use tracing::{debug, info, warn};
 use tray_icon::{
     TrayIconBuilder, TrayIconEvent,
     menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem},
 };
 
-use crate::fans::AppState;
+use crate::client::DaemonClient;
 
 // Define menu IDs as constants
 const FAN_MAX_ID: &str = "fan_max";
@@ -24,11 +24,10 @@ pub enum TrayMessage {
 
 pub struct TrayManager {
     tray_icon: tray_icon::TrayIcon,
-    app_state: Arc<Mutex<AppState>>,
 }
 
 impl TrayManager {
-    pub fn new(app_state: Arc<Mutex<AppState>>) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let path = "assets/icon.png";
 
         let (icon_rgba, icon_width, icon_height) = {
@@ -45,7 +44,7 @@ impl TrayManager {
             .expect("Failed to open icon");
 
         // Create menu items and get their IDs
-        let (menu, _, _, _, _) = create_menu_with_ids(app_state.clone());
+        let (menu, _, _, _, _) = create_menu_with_ids();
 
         // Make tray_icon and keep it on the main thread
         let tray_icon = TrayIconBuilder::new()
@@ -59,7 +58,6 @@ impl TrayManager {
 
         Ok(Self {
             tray_icon,
-            app_state,
         })
     }
 
@@ -136,7 +134,7 @@ impl TrayManager {
             // Check for menu update signals (non-blocking)
             if rx_menu_update.try_recv().is_ok() {
                 info!("Updating tray icon menu...");
-                let (new_menu, _, _, _, _) = create_menu_with_ids(self.app_state.clone());
+                let (new_menu, _, _, _, _) = create_menu_with_ids();
                 self.tray_icon.set_menu(Some(Box::new(new_menu)));
                 debug!("Tray icon menu updated successfully");
             }
@@ -147,9 +145,7 @@ impl TrayManager {
     }
 }
 
-fn create_menu_with_ids(
-    app_state: Arc<Mutex<AppState>>,
-) -> (
+fn create_menu_with_ids() -> (
     Menu,
     tray_icon::menu::MenuId,
     tray_icon::menu::MenuId,
@@ -162,11 +158,13 @@ fn create_menu_with_ids(
     let fan_bios_id = MenuId::new(FAN_BIOS_ID);
     let quit_id = MenuId::new(QUIT_ID);
 
-    let fan_status = MenuItem::new(
-        crate::fans::fan_status_string(app_state.clone()).as_str(),
-        false,
-        None,
-    );
+    // Get status from daemon
+    let status_text = match DaemonClient::new().get_status() {
+        Ok(status) => format!("Fans: {}", status),
+        Err(_) => "Fans: Daemon not running".to_string(),
+    };
+
+    let fan_status = MenuItem::new(status_text.as_str(), false, None);
     let separator1 = PredefinedMenuItem::separator();
     let fan_max = MenuItem::with_id(fan_max_id.clone(), "Fans Max", true, None);
     let fan_auto = MenuItem::with_id(fan_auto_id.clone(), "Fans Auto", true, None);

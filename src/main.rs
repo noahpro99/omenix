@@ -1,12 +1,11 @@
-use std::sync::{Arc, Mutex, mpsc};
-use tracing::{error, info};
 use gtk::traits::GtkSettingsExt;
+use std::sync::mpsc;
+use tracing::{error, info};
 
-mod fans;
-mod auth;
+mod client;
 mod tray;
 
-use fans::{AppState, FanStatus};
+use client::{DaemonClient, FanStatus};
 use tray::{TrayManager, TrayMessage};
 
 fn main() {
@@ -14,7 +13,7 @@ fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "omenix=debug,warn".into()),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with_target(true)
         .with_thread_ids(true)
@@ -30,29 +29,35 @@ fn main() {
     };
     settings.set_gtk_application_prefer_dark_theme(true);
 
-    let app_state = Arc::new(Mutex::new(AppState::new()));
-    info!("App state initialized: {:?}", app_state.lock().unwrap());
+    // Create daemon client
+    let client = DaemonClient::new();
 
-    // Start fan control background thread
-    fans::start_fan_control_thread(app_state.clone());
+    // Check if daemon is running
+    if !client.is_daemon_running() {
+        error!("Cannot connect to daemon. Please make sure 'omenix-daemon' is running as root.");
+        error!("Run: sudo omenix-daemon");
+        std::process::exit(1);
+    }
+
+    info!("Connected to daemon successfully");
 
     // Create tray manager
-    let mut tray_manager = TrayManager::new(app_state.clone())
-        .expect("Failed to create tray manager");
+    let mut tray_manager = TrayManager::new().expect("Failed to create tray manager");
 
     let (tx, rx) = mpsc::channel();
     let (tx_quit, rx_quit) = mpsc::channel();
 
     // Handle messages
-    let app_state_for_handler = app_state.clone();
     let tx_quit_clone = tx_quit.clone();
     std::thread::spawn(move || {
         info!("Message handler thread started");
+        let daemon_client = DaemonClient::new();
+
         while let Ok(message) = rx.recv() {
             match message {
                 TrayMessage::FansMax => {
                     info!("Setting fans to Max Performance...");
-                    if let Err(e) = fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Max) {
+                    if let Err(e) = daemon_client.set_fan_mode(FanStatus::Max) {
                         error!("Failed to set max fan mode: {}", e);
                     } else {
                         info!("✓ Fan mode set to: Max Performance");
@@ -60,7 +65,7 @@ fn main() {
                 }
                 TrayMessage::FansAuto => {
                     info!("Setting fans to Auto Control...");
-                    if let Err(e) = fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Auto) {
+                    if let Err(e) = daemon_client.set_fan_mode(FanStatus::Auto) {
                         error!("Failed to set auto fan mode: {}", e);
                     } else {
                         info!("✓ Fan mode set to: Auto Control");
@@ -68,16 +73,16 @@ fn main() {
                 }
                 TrayMessage::FansBios => {
                     info!("Setting fans to BIOS Default...");
-                    if let Err(e) = fans::set_fan_status(app_state_for_handler.clone(), FanStatus::Bios) {
+                    if let Err(e) = daemon_client.set_fan_mode(FanStatus::Bios) {
                         error!("Failed to set bios fan mode: {}", e);
                     } else {
                         info!("✓ Fan mode set to: BIOS Default");
                     }
                 }
-                TrayMessage::UpdateStatus => {
-                    let current_status = fans::fan_status_string(app_state_for_handler.clone());
-                    info!("Current status: {}", current_status);
-                }
+                TrayMessage::UpdateStatus => match daemon_client.get_status() {
+                    Ok(status) => info!("Current status: {}", status),
+                    Err(e) => error!("Failed to get status: {}", e),
+                },
                 TrayMessage::Exit => {
                     info!("Exiting application...");
                     let _ = tx_quit_clone.send(());
@@ -98,8 +103,7 @@ fn main() {
     info!("Starting main event loop");
 
     // Start tray manager event loop
-    tray_manager.start_event_loop(tx)
+    tray_manager
+        .start_event_loop(tx)
         .expect("Failed to start tray manager event loop");
 }
-
-
