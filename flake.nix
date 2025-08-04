@@ -13,23 +13,14 @@
       omenix = pkgs.rustPlatform.buildRustPackage {
         pname = "omenix";
         version = "0.1.0";
-
-        src = pkgs.lib.cleanSourceWith {
-          src = ./.;
-          filter = path: type:
-            let baseName = baseNameOf path; in
-            (pkgs.lib.cleanSourceFilter path type) ||
-            (type == "directory" && baseName == "assets") ||
-            (type == "regular" && pkgs.lib.hasSuffix ".png" baseName);
-        };
-
+        src = ./.;
         cargoLock = {
           lockFile = ./Cargo.lock;
         };
 
         nativeBuildInputs = with pkgs; [
           pkg-config
-          gcc
+          makeWrapper
         ];
 
         buildInputs = with pkgs; [
@@ -39,6 +30,28 @@
           openssl
           xdotool
         ];
+
+        postInstall = ''
+          mkdir -p $out/share/omenix/assets
+          cp -r assets/* $out/share/omenix/assets/
+          
+          # Wrap binaries with environment variable and runtime library paths
+          wrapProgram $out/bin/omenix \
+            --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
+            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [
+              pkgs.libayatana-appindicator
+              pkgs.libappindicator-gtk3
+              pkgs.gtk3
+            ]}"
+          
+          wrapProgram $out/bin/omenix-daemon \
+            --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
+            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [
+              pkgs.libayatana-appindicator
+              pkgs.libappindicator-gtk3
+              pkgs.gtk3
+            ]}"
+        '';
 
         meta = with pkgs.lib; {
           description = "Fan control application for HP Omen laptops";
@@ -142,24 +155,12 @@
                 pkgs.gtk3
               ]
             }:$LD_LIBRARY_PATH"
-
-            # Helpful for some GTK apps so schemas/icons resolve
-            export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share:${pkgs.hicolor-icon-theme}/share:$XDG_DATA_DIRS"
             
-            echo "🔧 Omenix development environment loaded"
-            echo "📦 Build the project with: cargo build"
-            echo "🚀 Run daemon with: cargo run --bin omenix-daemon"
-            echo "🎯 Run GUI with: cargo run --bin omenix"
-            echo ""
-            echo "📋 For NixOS users:"
-            echo "   # Add to configuration.nix:"
-            echo "   services.omenix.enable = true;  # Enables the daemon"
-            echo ""
-            echo "   # Add to Hyprland config for GUI:"
-            echo "   exec-once = omenix"
-            echo ""
-            echo "📋 For non-NixOS users:"
-            echo "   nix run github:noahpro99/omenix  # Runs the GUI"
+            # Set assets directory for development
+            export OMENIX_ASSETS_DIR="$(pwd)/assets"
+            
+            echo "Development environment loaded!"
+            echo "Assets directory: $OMENIX_ASSETS_DIR"
           '';
 
         };

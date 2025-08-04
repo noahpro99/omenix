@@ -24,14 +24,25 @@ pub struct TrayManager {
 }
 
 impl TrayManager {
+    fn get_icon_path() -> String {
+        // Try environment variable first (set by Nix build)
+        if let Ok(assets_dir) = std::env::var("OMENIX_ASSETS_DIR") {
+            format!("{}/icon.png", assets_dir)
+        }
+        // Fallback to relative path for development
+        else {
+            "assets/icon.png".to_string()
+        }
+    }
+
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let path = "assets/icon.png";
         let client = DaemonClient::new();
+        let icon_path = Self::get_icon_path();
 
         let (icon_rgba, icon_width, icon_height) = {
-            debug!("Loading icon from path: {}", path);
-            let image = image::open(path)
-                .expect("Failed to open icon path")
+            debug!("Loading icon from path: {}", icon_path);
+            let image = image::open(&icon_path)
+                .map_err(|e| format!("Failed to open icon at {}: {}", icon_path, e))?
                 .into_rgba8();
             let (width, height) = image.dimensions();
             let rgba = image.into_raw();
