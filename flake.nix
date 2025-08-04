@@ -30,6 +30,7 @@
           libappindicator-gtk3
           libayatana-appindicator
           openssl
+          xdotool
         ];
 
         meta = with pkgs.lib; {
@@ -143,10 +144,15 @@
             echo "🚀 Run daemon with: cargo run --bin omenix-daemon"
             echo "🎯 Run GUI with: cargo run --bin omenix"
             echo ""
-            echo "📋 To use in NixOS configuration:"
-            echo "   inputs.omenix.url = \"github:noahpro99/omenix\";"
-            echo "   imports = [ inputs.omenix.nixosModules.default ];"
-            echo "   services.omenix.enable = true;"
+            echo "📋 For NixOS users:"
+            echo "   # Add to configuration.nix:"
+            echo "   services.omenix.enable = true;  # Enables the daemon"
+            echo ""
+            echo "   # Add to Hyprland config for GUI:"
+            echo "   exec-once = omenix"
+            echo ""
+            echo "📋 For non-NixOS users:"
+            echo "   nix run github:noahpro99/omenix  # Runs the GUI"
           '';
 
         };
