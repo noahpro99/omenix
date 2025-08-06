@@ -20,8 +20,7 @@
 
         nativeBuildInputs = with pkgs; [
           pkg-config
-          wrapGAppsHook3
-          autoPatchelfHook
+          makeWrapper
         ];
 
         buildInputs = with pkgs; [
@@ -34,7 +33,24 @@
 
         postInstall = ''
           mkdir -p $out/share/omenix/assets
-          install -Dm644 assets/* $out/share/omenix/assets/
+          cp -r assets/* $out/share/omenix/assets/
+          
+          # Wrap binaries with environment variable and runtime library paths
+          wrapProgram $out/bin/omenix \
+            --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
+            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [
+              pkgs.libayatana-appindicator
+              pkgs.libappindicator-gtk3
+              pkgs.gtk3
+            ]}"
+          
+          wrapProgram $out/bin/omenix-daemon \
+            --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
+            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [
+              pkgs.libayatana-appindicator
+              pkgs.libappindicator-gtk3
+              pkgs.gtk3
+            ]}"
         '';
 
         meta = with pkgs.lib; {
@@ -50,6 +66,26 @@
       packages.${system} = {
         default = omenix;
         omenix = omenix;
+      };
+
+      apps.${system} = {
+        default = {
+          type = "app";
+          program = "${omenix}/bin/omenix";
+          meta = {
+            description = "Omenix Fan Control GUI";
+            mainProgram = "omenix";
+          };
+        };
+
+        omenix-daemon = {
+          type = "app";
+          program = "${omenix}/bin/omenix-daemon";
+          meta = {
+            description = "Omenix Fan Control Daemon";
+            mainProgram = "omenix-daemon";
+          };
+        };
       };
 
       nixosModules.default = { config, lib, pkgs, ... }:
