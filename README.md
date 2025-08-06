@@ -41,15 +41,6 @@ if you have a desktop environment like hyprland,
 exec-once = omenix
 ```
 
-### Non-NixOS with Nix Package Manager
+### Non-NixOS Users
 
-Install and run:
-
-```bash
-# Run directly
-nix run github:noahpro99/omenix
-
-# Or install to profile
-nix profile install github:noahpro99/omenix
-omenix
-```
+We are working on a standalone binary release using `nix bundle`. Not yet available.
