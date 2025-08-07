@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
 use omenix::client::DAEMON_SOCKET_PATH;
+use omenix::config::Config;
 use omenix::types::{FanMode, HardwareFanMode, PerformanceMode};
 
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
@@ -27,20 +28,26 @@ pub struct DaemonState {
     pub consecutive_high_temps: u32,
     pub temp_monitoring_active: bool,
     pub current_temp: Option<i32>,
+    pub config: Config,
 }
 
 impl DaemonState {
     pub fn new() -> Self {
+        let config = Config::load();
         let state = Self {
-            user_mode: FanMode::Bios,
-            actual_mode: HardwareFanMode::Bios,
-            performance_mode: PerformanceMode::Balanced,
+            user_mode: config.fan_mode,
+            actual_mode: match config.fan_mode {
+                FanMode::Max => HardwareFanMode::Max,
+                _ => HardwareFanMode::Bios,
+            },
+            performance_mode: config.performance_mode,
             last_fan_write: None,
             consecutive_high_temps: 0,
-            temp_monitoring_active: false,
+            temp_monitoring_active: config.fan_mode == FanMode::Auto,
             current_temp: None,
+            config,
         };
-        info!("DaemonState initialized: {:?}", state);
+        info!("DaemonState initialized with saved config: {:?}", state);
         state
     }
 }
@@ -227,6 +234,14 @@ fn set_fan_mode(state: Arc<Mutex<DaemonState>>, new_mode: FanMode) -> Result<(),
     // Write to hardware
     write_fan_mode(actual_mode_to_set).map_err(|e| format!("Failed to write fan mode: {}", e))?;
 
+    // Save configuration after successful hardware write
+    {
+        let mut state_guard = state.lock().unwrap();
+        if let Err(e) = state_guard.config.update_fan_mode(new_mode) {
+            warn!("Failed to save fan mode configuration: {}", e);
+        }
+    }
+
     info!("Successfully set fan mode to: {:?}", actual_mode_to_set);
     Ok(())
 }
@@ -247,7 +262,46 @@ fn set_performance_mode(
     write_performance_mode(new_mode)
         .map_err(|e| format!("Failed to write performance mode: {}", e))?;
 
+    // Save configuration after successful hardware write
+    {
+        let mut state_guard = state.lock().unwrap();
+        if let Err(e) = state_guard.config.update_performance_mode(new_mode) {
+            warn!("Failed to save performance mode configuration: {}", e);
+        }
+    }
+
     info!("Successfully set performance mode to: {:?}", new_mode);
+    Ok(())
+}
+
+fn apply_saved_settings(state: Arc<Mutex<DaemonState>>) -> Result<(), String> {
+    info!("Applying saved settings to hardware on startup");
+    
+    let (fan_mode, performance_mode) = {
+        let state_guard = state.lock().unwrap();
+        (state_guard.user_mode, state_guard.performance_mode)
+    };
+
+    // Apply fan mode
+    let hardware_mode = match fan_mode {
+        FanMode::Max => HardwareFanMode::Max,
+        FanMode::Auto => {
+            // For Auto mode, check current temperature
+            match read_temperature() {
+                Ok(temp) if temp > TEMP_THRESHOLD => HardwareFanMode::Max,
+                _ => HardwareFanMode::Bios,
+            }
+        }
+        FanMode::Bios => HardwareFanMode::Bios,
+    };
+    
+    write_fan_mode(hardware_mode).map_err(|e| format!("Failed to apply saved fan mode: {}", e))?;
+    info!("Applied saved fan mode: {:?}", fan_mode);
+
+    // Apply performance mode
+    write_performance_mode(performance_mode).map_err(|e| format!("Failed to apply saved performance mode: {}", e))?;
+    info!("Applied saved performance mode: {:?}", performance_mode);
+
     Ok(())
 }
 
@@ -453,6 +507,11 @@ fn main() {
     }
 
     let state = Arc::new(Mutex::new(DaemonState::new()));
+
+    // Apply saved settings to hardware on startup
+    if let Err(e) = apply_saved_settings(state.clone()) {
+        error!("Failed to apply saved settings on startup: {}", e);
+    }
 
     // Start temperature monitoring thread
     start_temperature_monitor(state.clone());

@@ -1,7 +1,8 @@
 /// Shared types used across the daemon and client
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum FanMode {
     Max,  // Force fans to maximum speed
     Auto, // Temperature-based automatic control
@@ -61,7 +62,7 @@ impl fmt::Display for FanStatus {
 }
 
 /// Performance modes that write to /sys/firmware/acpi/platform_profile
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PerformanceMode {
     Balanced,
     Performance,

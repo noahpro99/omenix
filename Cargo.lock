@@ -1161,6 +1161,8 @@ dependencies = [
  "gtk",
  "image",
  "libc",
+ "serde",
+ "serde_json",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
