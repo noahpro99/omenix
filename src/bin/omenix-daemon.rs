@@ -32,9 +32,9 @@ pub struct DaemonState {
 impl DaemonState {
     pub fn new() -> Self {
         let state = Self {
-            user_mode: FanMode::Bios,
+            user_mode: FanMode::Auto,
             actual_mode: HardwareFanMode::Bios,
-            performance_mode: PerformanceMode::Balanced,
+            performance_mode: PerformanceMode::Performance,
             last_fan_write: None,
             consecutive_high_temps: 0,
             temp_monitoring_active: false,
