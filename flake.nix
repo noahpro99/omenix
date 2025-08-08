@@ -153,7 +153,6 @@
               environment.systemPackages = [ config.services.omenix-daemon.package ];
             }
             // mkIf config.programs.omenix.enable {
-              description = "Omenix Fan Control GUI";
               environment.systemPackages = [ config.programs.omenix.package ];
             };
         };
