@@ -99,20 +99,13 @@ fn main() {
         std::process::exit(0);
     });
 
-    // Handle tray menu refresh signals
-    std::thread::spawn(move || {
-        info!("Tray refresh handler thread started");
-        while let Ok(()) = rx_refresh.recv() {
-            info!("Refreshing tray menu state");
-            // For now, just log the refresh request
-            // In a more complex implementation, we'd signal the tray manager
-        }
-    });
+    // Handle tray menu refresh signals - remove the separate thread
+    // since we're now handling refresh signals directly in the tray event loop
 
     info!("Starting main event loop");
 
-    // Start tray manager event loop
+    // Start tray manager event loop with refresh channel
     tray_manager
-        .start_event_loop(tx)
+        .start_event_loop(tx, rx_refresh)
         .expect("Failed to start tray manager event loop");
 }
