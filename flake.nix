@@ -135,7 +135,7 @@
           };
 
           config = mkMerge [
-            (mkIf (config.services.omenix-daemon.enable or config.programs.omenix.enable) {
+            (mkIf config.services.omenix-daemon.enable {
               systemd.services.omenix-daemon = {
                 description = "Omenix Fan Control Daemon";
                 wantedBy = [ "multi-user.target" ];
