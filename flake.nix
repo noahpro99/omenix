@@ -107,37 +107,55 @@
       nixosModules.default =
         { config, lib, ... }:
         with lib;
-        let
-          cfg = config.services.omenix;
-        in
         {
-          options.services.omenix = {
-            enable = mkEnableOption "Omenix fan control daemon";
+          options = {
+            programs.omenix = {
+              enable = mkEnableOption "Omenix fan control gui";
 
-            package = mkOption {
-              type = types.package;
-              default = omenix;
-              description = "The omenix package to use.";
-            };
-          };
-
-          config = mkIf cfg.enable {
-            systemd.services.omenix-daemon = {
-              description = "Omenix Fan Control Daemon";
-              wantedBy = [ "multi-user.target" ];
-              after = [ "multi-user.target" ];
-
-              serviceConfig = {
-                Type = "simple";
-                ExecStart = "${cfg.package}/bin/omenix-daemon";
-                Restart = "on-failure";
-                RestartSec = 5;
-                User = "root";
+              package = mkOption {
+                type = types.package;
+                default = omenix;
+                description = "The Omenix Package to use";
               };
             };
 
-            environment.systemPackages = [ cfg.package ];
+            services.omenix-daemon = {
+              enable = mkOption {
+                type = types.boolByOr;
+                default = config.programs.omenix.enable or false;
+                description = "Omenix fan control daemon";
+              };
+
+              package = mkOption {
+                type = types.package;
+                default = omenix-daemon;
+                description = "The omenix-daemon package to use.";
+              };
+            };
           };
+
+          config = mkMerge [
+            (mkIf config.services.omenix-daemon.enable {
+              systemd.services.omenix-daemon = {
+                description = "Omenix Fan Control Daemon";
+                wantedBy = [ "multi-user.target" ];
+                after = [ "multi-user.target" ];
+
+                serviceConfig = {
+                  Type = "simple";
+                  ExecStart = "${config.services.omenix-daemon.package}/bin/omenix-daemon";
+                  Restart = "on-failure";
+                  RestartSec = 5;
+                  User = "root";
+                };
+              };
+
+              environment.systemPackages = [ config.services.omenix-daemon.package ];
+            })
+            (mkIf config.programs.omenix.enable {
+              environment.systemPackages = [ config.programs.omenix.package ];
+            })
+          ];
         };
 
       devShells.${system}.default = pkgs.mkShell {
