@@ -21,7 +21,7 @@ jobs:
         run: nix bundle --bundler github:ralismark/nix-appimage .#packages.x86_64-linux.omenix
 
       - name: Run nix bundle
-        run: nix bundle --bundler github:ralismark/nix-appimage .#packages.aarch64-linux.omenix-daemon
+        run: nix bundle --bundler github:ralismark/nix-appimage .#packages.x86_64-linux.omenix-daemon
 
       - name: Upload bundle artifact
         uses: actions/upload-artifact@v4
