@@ -25,7 +25,7 @@ Add to your system configuration:
   inputs.omenix.url = "github:noahpro99/omenix";
 
   # In your system configuration:
-  services.omenix.enable = true;
+  packages.omenix.enable = true;
 }
 ```
 
@@ -35,7 +35,7 @@ Run the GUI:
 omenix
 ```
 
-if you have a desktop environment like hyprland,
+If you have a desktop environment like hyprland:
 
 ```
 exec-once = omenix
@@ -52,4 +52,16 @@ nix run github:noahpro99/omenix
 # Or install to profile
 nix profile install github:noahpro99/omenix
 omenix
+```
+
+### Non-NixOS without Nix Package Manager
+
+Download the latest AppImage release from the [Releases page](https://github.com/noahpro99/omenix/releases).
+
+```bash
+# Make it executable
+chmod +x omenix*.AppImage
+
+# Run the AppImages
+./omenix*.AppImage
 ```
