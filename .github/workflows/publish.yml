@@ -1,0 +1,63 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Nix
+        uses: cachix/install-nix-action@v25
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Run nix bundle
+        run: nix bundle --bundler github:ralismark/nix-appimage .#packages.x86_64-linux.omenix
+
+      - name: Run nix bundle
+        run: nix bundle --bundler github:ralismark/nix-appimage .#packages.aarch64-linux.omenix-daemon
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Omenix AppImage
+          path: omenix.AppImage
+
+      - name: Upload daemon bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Omenix Daemon AppImage
+          path: omenix-daemon.AppImage
+
+  release:
+    needs: bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for creating releases and uploading assets
+    steps:
+      - name: Download bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Omenix AppImage
+          path: .
+
+      - name: Download daemon bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Omenix Daemon AppImage
+          path: .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            omenix.AppImage
+            omenix-daemon.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
