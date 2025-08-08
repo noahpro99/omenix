@@ -1,94 +1,111 @@
 {
   description = "Omenix Fan Control for HP Omen laptops";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
 
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-  };
-
-  outputs = { self, nixpkgs }:
+  outputs =
+    { nixpkgs, ... }:
     let
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      pkgs = import nixpkgs { inherit system; };
+
+      libs = nixpkgs.lib.makeLibraryPath (
+        with pkgs;
+        [
+          libayatana-appindicator
+          libappindicator-gtk3
+          gtk3
+        ]
+      );
+
+      version = "0.1.0";
+      src = ./.;
+      cargoLock.lockFile = ./Cargo.lock;
+
+      nativeBuildInputs = with pkgs; [
+        pkg-config
+        makeWrapper
+      ];
+
+      buildInputs = with pkgs; [
+        gtk3
+        libappindicator-gtk3
+        libayatana-appindicator
+        openssl
+        xdotool
+      ];
+
+      postInstall = ''
+        mkdir -p $out/share/omenix/assets
+        cp -r assets/* $out/share/omenix/assets/
+        wrapProgram $out/bin/* \
+         --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
+         --prefix LD_LIBRARY_PATH : "${libs}"
+      '';
+
+      meta = with nixpkgs.lib; {
+        description = "Fan control application for HP Omen laptops";
+        homepage = "https://github.com/noahpro99/omenix";
+        license = licenses.mit;
+        platforms = platforms.linux;
+      };
 
       omenix = pkgs.rustPlatform.buildRustPackage {
         pname = "omenix";
-        version = "0.1.0";
-        src = ./.;
-        cargoLock = {
-          lockFile = ./Cargo.lock;
-        };
-
-        nativeBuildInputs = with pkgs; [
-          pkg-config
-          makeWrapper
+        inherit
+          version
+          src
+          cargoLock
+          nativeBuildInputs
+          buildInputs
+          postInstall
+          ;
+        cargoBuildFlags = [
+          "--bin"
+          "omenix"
         ];
-
-        buildInputs = with pkgs; [
-          gtk3
-          libappindicator-gtk3
-          libayatana-appindicator
-          openssl
-          xdotool
-        ];
-
-        postInstall = ''
-          mkdir -p $out/share/omenix/assets
-          cp -r assets/* $out/share/omenix/assets/
-          
-          # Wrap binaries with environment variable and runtime library paths
-          wrapProgram $out/bin/omenix \
-            --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
-            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [
-              pkgs.libayatana-appindicator
-              pkgs.libappindicator-gtk3
-              pkgs.gtk3
-            ]}"
-          
-          wrapProgram $out/bin/omenix-daemon \
-            --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
-            --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [
-              pkgs.libayatana-appindicator
-              pkgs.libappindicator-gtk3
-              pkgs.gtk3
-            ]}"
-        '';
-
-        meta = with pkgs.lib; {
-          description = "Fan control application for HP Omen laptops";
-          homepage = "https://github.com/noahpro99/omenix";
-          license = licenses.mit;
-          platforms = platforms.linux;
+        meta = meta // {
           mainProgram = "omenix";
+        };
+      };
+
+      omenix-daemon = pkgs.rustPlatform.buildRustPackage {
+        pname = "omenix-daemon";
+        inherit
+          version
+          src
+          cargoLock
+          nativeBuildInputs
+          buildInputs
+          postInstall
+          ;
+        cargoBuildFlags = [
+          "--bin"
+          "omenix-daemon"
+        ];
+        meta = meta // {
+          mainProgram = "omenix-daemon";
         };
       };
     in
     {
-      packages.${system} = {
-        default = omenix;
-        omenix = omenix;
-      };
+      packages.${system} = { inherit omenix omenix-daemon; };
 
       apps.${system} = {
-        default = {
+        omenix = {
           type = "app";
           program = "${omenix}/bin/omenix";
-          meta = {
-            description = "Omenix Fan Control GUI";
-            mainProgram = "omenix";
-          };
+          inherit (omenix) meta;
         };
 
         omenix-daemon = {
           type = "app";
-          program = "${omenix}/bin/omenix-daemon";
-          meta = {
-            description = "Omenix Fan Control Daemon";
-            mainProgram = "omenix-daemon";
-          };
+          program = "${omenix-daemon}/bin/omenix-daemon";
+          inherit (omenix-daemon) meta;
         };
       };
 
-      nixosModules.default = { config, lib, pkgs, ... }:
+      nixosModules.default =
+        { config, lib, ... }:
         with lib;
         let
           cfg = config.services.omenix;
@@ -123,47 +140,28 @@
           };
         };
 
-      devShells.${system}.default = pkgs.mkShell
-        {
-          buildInputs = with pkgs; [
-            # Runtime libraries
-            gtk3
-            xdotool
-            libappindicator-gtk3
-            libayatana-appindicator
-          ];
+      devShells.${system}.default = pkgs.mkShell {
+        inherit buildInputs;
+        nativeBuildInputs = with pkgs; [
+          cargo
+          rustc
+          rust-analyzer
+          clippy
+          bashInteractive
+          gcc
+          openssl
+          pkg-config
+          libiconv
+        ];
 
-          nativeBuildInputs = with pkgs; [
-            # Build tools
-            cargo
-            rustc
-            rust-analyzer
-            clippy
-            bashInteractive
-            gcc
-            openssl
-            pkg-config
-            libiconv
-          ];
+        shellHook = ''
+          export LD_LIBRARY_PATH="${libs}:$LD_LIBRARY_PATH"
+          export OMENIX_ASSETS_DIR="$(pwd)/assets"
+          echo "Development environment loaded!"
+          echo "Assets directory: $OMENIX_ASSETS_DIR"
+        '';
 
-          shellHook = ''
-            # Make sure dynamic linker can find the GTK/AppIndicator .so files
-            export LD_LIBRARY_PATH="${
-              pkgs.lib.makeLibraryPath [
-                pkgs.libayatana-appindicator
-                pkgs.libappindicator-gtk3
-                pkgs.gtk3
-              ]
-            }:$LD_LIBRARY_PATH"
-            
-            # Set assets directory for development
-            export OMENIX_ASSETS_DIR="$(pwd)/assets"
-            
-            echo "Development environment loaded!"
-            echo "Assets directory: $OMENIX_ASSETS_DIR"
-          '';
-
-        };
+      };
+      formatter.x86_64-linux = pkgs.nixfmt-tree;
     };
 }
-

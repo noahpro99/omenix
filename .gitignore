@@ -1,4 +1,5 @@
 /target
+/result
 
 
 # Added by cargo
@@ -18,3 +19,4 @@
 .env
 !.envrc
 result
+*-arx
