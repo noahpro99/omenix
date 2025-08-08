@@ -46,11 +46,10 @@ exec-once = omenix
 Install and run:
 
 ```bash
-# Run directly
-nix run github:noahpro99/omenix
+nix profile install github:noahpro99/omenix#omenix
+nix profile install github:noahpro99/omenix#omenix-daemon
 
-# Or install to profile
-nix profile install github:noahpro99/omenix
+sudo omenix-daemon
 omenix
 ```
 
@@ -59,9 +58,10 @@ omenix
 Download the latest AppImage release from the [Releases page](https://github.com/noahpro99/omenix/releases).
 
 ```bash
-# Make it executable
 chmod +x omenix*.AppImage
 
-# Run the AppImages
-./omenix*.AppImage
+sudo ./omenix-daemon.AppImage
+./omenix-gui.AppImage
 ```
+
+some distributions may require `fuse` to be installed.
