@@ -134,8 +134,8 @@
             };
           };
 
-          config =
-            mkIf (config.services.omenix-daemon.enable or config.programs.omenix.enable) {
+          config = mkMerge [
+            (mkIf (config.services.omenix-daemon.enable or config.programs.omenix.enable) {
               systemd.services.omenix-daemon = {
                 description = "Omenix Fan Control Daemon";
                 wantedBy = [ "multi-user.target" ];
@@ -151,10 +151,11 @@
               };
 
               environment.systemPackages = [ config.services.omenix-daemon.package ];
-            }
-            // mkIf config.programs.omenix.enable {
+            })
+            (mkIf config.programs.omenix.enable {
               environment.systemPackages = [ config.programs.omenix.package ];
-            };
+            })
+          ];
         };
 
       devShells.${system}.default = pkgs.mkShell {
