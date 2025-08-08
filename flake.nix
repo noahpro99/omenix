@@ -135,7 +135,7 @@
           };
 
           config =
-            mkIf (config.services.omenix-daemon.enable || config.programs.omenix.enable) {
+            mkIf (config.services.omenix-daemon.enable or config.programs.omenix.enable) {
               systemd.services.omenix-daemon = {
                 description = "Omenix Fan Control Daemon";
                 wantedBy = [ "multi-user.target" ];
