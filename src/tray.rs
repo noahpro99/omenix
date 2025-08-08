@@ -1,4 +1,4 @@
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use tracing::{debug, info, warn};
 use tray_icon::{
     TrayIconBuilder, TrayIconEvent,
@@ -6,7 +6,7 @@ use tray_icon::{
 };
 
 use crate::client::DaemonClient;
-use crate::types::{FanMode, PerformanceMode, TrayMessage};
+use crate::types::{FanMode, PerformanceMode, SystemState, TrayMessage};
 
 // Define menu IDs as constants
 const FAN_MAX_ID: &str = "fan_max";
@@ -21,6 +21,7 @@ const QUIT_ID: &str = "quit";
 pub struct TrayManager {
     tray_icon: tray_icon::TrayIcon,
     client: DaemonClient,
+    cached_state: Arc<Mutex<Option<SystemState>>>,
 }
 
 impl TrayManager {
@@ -64,19 +65,16 @@ impl TrayManager {
 
         info!("System tray icon created successfully");
 
-        Ok(Self { tray_icon, client })
+        Ok(Self { 
+            tray_icon, 
+            client,
+            cached_state: Arc::new(Mutex::new(None)),
+        })
     }
 
-    fn create_menu(client: &DaemonClient) -> Menu {
-        // Get current state to show in menu
-        let current_state = client.get_current_state().ok();
-
+    fn create_menu_with_state(state: &SystemState) -> Menu {
         // Fan control submenu
-        let fan_current_mode = current_state
-            .as_ref()
-            .map(|s| s.fan_mode)
-            .unwrap_or(FanMode::Bios);
-
+        let fan_current_mode = state.fan_mode;
         let fan_menu_label = format!("🌪️ Fan Mode: {}", fan_current_mode);
 
         let fan_max_id = MenuId::new(FAN_MAX_ID);
@@ -107,12 +105,8 @@ impl TrayManager {
             Submenu::with_items(&fan_menu_label, true, &[&fan_max, &fan_auto, &fan_bios])
                 .expect("Failed to create fan submenu");
 
-        // Performance mode submenu (placeholder for future implementation)
-        let perf_current_mode = current_state
-            .as_ref()
-            .map(|s| s.performance_mode)
-            .unwrap_or(PerformanceMode::Balanced);
-
+        // Performance mode submenu
+        let perf_current_mode = state.performance_mode;
         let perf_menu_label = format!("⚡ Performance: {}", perf_current_mode);
 
         let perf_balanced_id = MenuId::new(PERF_BALANCED_ID);
@@ -137,13 +131,9 @@ impl TrayManager {
             Submenu::with_items(&perf_menu_label, true, &[&perf_balanced, &perf_performance])
                 .expect("Failed to create performance submenu");
 
-        // Temperature display (if available)
-        let temp_display = if let Some(state) = &current_state {
-            if let Some(temp) = state.temperature {
-                format!("🌡️ Temperature: {}°C", temp / 1000)
-            } else {
-                "🌡️ Temperature: Unknown".to_string()
-            }
+        // Temperature display
+        let temp_display = if let Some(temp) = state.temperature {
+            format!("🌡️ Temperature: {}°C", temp / 1000)
         } else {
             "🌡️ Temperature: Unknown".to_string()
         };
@@ -166,14 +156,53 @@ impl TrayManager {
         .expect("Failed to create menu")
     }
 
+    fn create_menu(client: &DaemonClient) -> Menu {
+        // Get current state to show in menu
+        let current_state = client.get_current_state().ok();
+
+        if let Some(state) = current_state {
+            Self::create_menu_with_state(&state)
+        } else {
+            // Fallback for when we can't get state
+            Self::create_menu_with_state(&SystemState {
+                fan_mode: FanMode::Bios,
+                performance_mode: PerformanceMode::Balanced,
+                temperature: None,
+            })
+        }
+    }
+
     fn update_menu(&mut self) {
-        let new_menu = Self::create_menu(&self.client);
-        self.tray_icon.set_menu(Some(Box::new(new_menu)));
+        // Check if state has actually changed before recreating menu
+        if let Ok(current_state) = self.client.get_current_state() {
+            let mut cached = self.cached_state.lock().unwrap();
+            let should_update = match &*cached {
+                Some(old_state) => {
+                    // Compare states to see if update is needed
+                    old_state.fan_mode != current_state.fan_mode 
+                        || old_state.performance_mode != current_state.performance_mode
+                        || old_state.temperature != current_state.temperature
+                }
+                None => true, // First time, always update
+            };
+            
+            if should_update {
+                debug!("State changed, updating menu");
+                let new_menu = Self::create_menu_with_state(&current_state);
+                self.tray_icon.set_menu(Some(Box::new(new_menu)));
+                *cached = Some(current_state);
+            } else {
+                debug!("State unchanged, skipping menu update");
+            }
+        } else {
+            debug!("Failed to get current state, skipping menu update");
+        }
     }
 
     pub fn start_event_loop(
         &mut self,
         tx: mpsc::Sender<TrayMessage>,
+        rx_refresh: mpsc::Receiver<()>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let menu_channel = MenuEvent::receiver();
         let _tray_channel = TrayIconEvent::receiver();
@@ -222,26 +251,40 @@ impl TrayManager {
 
         info!("Starting tray manager event loop");
 
-        // Main GTK event loop with periodic menu updates
-        // Update menu every few seconds to keep it current
+        // Main GTK event loop with less frequent menu updates
+        // Update menu less frequently to reduce flickering
         let mut last_update = std::time::Instant::now();
-        let update_interval = std::time::Duration::from_secs(3); // Faster refresh for better responsiveness
+        let update_interval = std::time::Duration::from_secs(10); // Reduced from 3 to 10 seconds
 
         loop {
             gtk::main_iteration_do(false); // Don't block
 
-            // Update menu periodically to show current state
+            // Check for refresh signals (non-blocking)
+            if let Ok(()) = rx_refresh.try_recv() {
+                debug!("Received refresh signal, updating menu immediately");
+                self.handle_state_change();
+            }
+
+            // Update menu periodically as fallback
             if last_update.elapsed() > update_interval {
+                debug!("Periodic menu update");
                 self.update_menu();
                 last_update = std::time::Instant::now();
             }
 
-            // Small sleep to prevent busy waiting
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // Longer sleep to reduce CPU usage and potential flickering
+            std::thread::sleep(std::time::Duration::from_millis(250));
         }
     }
 
     pub fn handle_state_change(&mut self) {
-        self.update_menu();
+        // Force update menu when external state change is detected
+        debug!("External state change detected, forcing menu update");
+        if let Ok(current_state) = self.client.get_current_state() {
+            let new_menu = Self::create_menu_with_state(&current_state);
+            self.tray_icon.set_menu(Some(Box::new(new_menu)));
+            let mut cached = self.cached_state.lock().unwrap();
+            *cached = Some(current_state);
+        }
     }
 }
