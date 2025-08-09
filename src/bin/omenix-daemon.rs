@@ -11,6 +11,10 @@ use omenix::client::DAEMON_SOCKET_PATH;
 use omenix::types::{FanMode, HardwareFanMode, PerformanceMode};
 
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
+const GPU_TEMP_SENSOR_PATHS: &[&str] = &[
+    "/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input",
+    "/sys/class/hwmon/hwmon*/temp*_input",
+];
 const FAN_CONTROL_PATH: &str = "/sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable";
 const PERFORMANCE_PROFILE_PATH: &str = "/sys/firmware/acpi/platform_profile";
 const TEMP_THRESHOLD: i32 = 75000; // 75°C in millicelsius
@@ -133,7 +137,65 @@ fn read_temperature() -> Result<i32, io::Error> {
             io::Error::new(io::ErrorKind::InvalidData, "Failed to read temperature")
         })?;
 
-    debug!("Max temperature read: {}°C", max_temp / 1000);
+    debug!("Max CPU temperature read: {}°C", max_temp / 1000);
+    Ok(max_temp)
+}
+
+#[instrument(level = "debug")]
+fn read_gpu_temperature() -> Result<i32, io::Error> {
+    let mut all_gpu_temps = Vec::new();
+
+    for pattern in GPU_TEMP_SENSOR_PATHS {
+        let paths: Vec<_> = glob::glob(pattern)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?
+            .filter_map(Result::ok)
+            .collect();
+
+        for path in paths {
+            if let Ok(mut file) = fs::File::open(&path) {
+                let mut contents = String::new();
+                if file.read_to_string(&mut contents).is_ok() {
+                    if let Ok(temp) = contents.trim().parse::<i32>() {
+                        // Filter reasonable GPU temperatures (between 0°C and 150°C)
+                        if temp >= 0 && temp <= 150000 {
+                            debug!("GPU temperature found at {:?}: {}°C", path, temp / 1000);
+                            all_gpu_temps.push(temp);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if all_gpu_temps.is_empty() {
+        debug!("No GPU temperature sensors found");
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "No GPU temperature sensors found",
+        ));
+    }
+
+    let max_gpu_temp = *all_gpu_temps.iter().max().unwrap();
+    debug!("Max GPU temperature read: {}°C", max_gpu_temp / 1000);
+    Ok(max_gpu_temp)
+}
+
+#[instrument(level = "debug")]
+fn read_max_temperature() -> Result<i32, io::Error> {
+    let cpu_temp = read_temperature().unwrap_or(0);
+    let gpu_temp = read_gpu_temperature().unwrap_or(0);
+    
+    let max_temp = cpu_temp.max(gpu_temp);
+    
+    if max_temp == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "No temperature sensors found",
+        ));
+    }
+    
+    debug!("Overall max temperature: {}°C (CPU: {}°C, GPU: {}°C)", 
+           max_temp / 1000, cpu_temp / 1000, gpu_temp / 1000);
     Ok(max_temp)
 }
 
@@ -182,7 +244,7 @@ fn set_fan_mode(state: Arc<Mutex<DaemonState>>, new_mode: FanMode) -> Result<(),
         FanMode::Max => HardwareFanMode::Max,
         FanMode::Auto => {
             // For Auto mode, check current temperature
-            match read_temperature() {
+            match read_max_temperature() {
                 Ok(temp) if temp > TEMP_THRESHOLD => HardwareFanMode::Max,
                 _ => HardwareFanMode::Bios,
             }
@@ -259,7 +321,7 @@ fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
             thread::sleep(TEMP_CHECK_INTERVAL);
 
             // Read current temperature
-            let current_temp = match read_temperature() {
+            let current_temp = match read_max_temperature() {
                 Ok(temp) => {
                     {
                         let mut state_guard = state.lock().unwrap();
