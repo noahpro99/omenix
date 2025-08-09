@@ -12,7 +12,6 @@
         with pkgs;
         [
           libayatana-appindicator
-          libappindicator-gtk3
           gtk3
         ]
       );
@@ -28,10 +27,8 @@
 
       buildInputs = with pkgs; [
         gtk3
-        libappindicator-gtk3
         libayatana-appindicator
         openssl
-        xdotool
       ];
 
       postInstall = ''
@@ -63,6 +60,7 @@
           "--bin"
           "omenix"
         ];
+        buildType = "release";
         meta = meta // {
           mainProgram = "omenix";
         };
@@ -82,6 +80,7 @@
           "--bin"
           "omenix-daemon"
         ];
+        buildType = "release";
         meta = meta // {
           mainProgram = "omenix-daemon";
         };
