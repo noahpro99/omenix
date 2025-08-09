@@ -165,7 +165,7 @@ impl TrayManager {
         } else {
             // Fallback for when we can't get state
             Self::create_menu_with_state(&SystemState {
-                fan_mode: FanMode::Bios,
+                fan_mode: FanMode::Auto,
                 performance_mode: PerformanceMode::Balanced,
                 temperature: None,
             })
