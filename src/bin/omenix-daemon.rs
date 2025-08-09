@@ -454,6 +454,14 @@ fn main() {
 
     let state = Arc::new(Mutex::new(DaemonState::new()));
 
+    // Apply initial fan mode (Auto) during startup
+    info!("Applying initial Auto fan mode during daemon startup");
+    if let Err(e) = set_fan_mode(state.clone(), FanMode::Auto) {
+        error!("Failed to set initial fan mode: {}", e);
+    } else {
+        info!("Successfully applied initial Auto fan mode");
+    }
+
     // Start temperature monitoring thread
     start_temperature_monitor(state.clone());
 
