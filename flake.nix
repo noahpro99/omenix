@@ -39,7 +39,7 @@
         cp -r assets/* $out/share/omenix/assets/
         wrapProgram $out/bin/* \
          --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
-         --prefix LD_LIBRARY_PATH : "${libs}"
+         --set LD_LIBRARY_PATH "${libs}"
       '';
 
       meta = with nixpkgs.lib; {
