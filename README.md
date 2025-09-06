@@ -9,12 +9,18 @@ Fan control application for HP Omen laptops with system tray integration.
 ## Features
 
 - **Fan Control**: Auto, Max Performance, or BIOS Default modes
-- **Performance Modes**: Balanced and Performance profiles
 - **System Tray**: Easy access via system tray icon
-- **Temperature Monitoring**: Real-time CPU temperature display
 - **Daemon Architecture**: Background service with GUI frontend
+- Sets max fans every 2 mins to avoid BIOS resetting it on some laptops
 
 ## Quick Start
+
+In order for Omenix to work, you need to have `hp-wmi` kernel module loaded which should be the case for most HP laptops. You can check if it's loaded with `lsmod | grep hp_wmi`. Setting the fans with `echo 2 | sudo tee /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable` also needs to work. If it doesn't, your laptop may not be supported.
+
+> You can see it by running dmidecode look for `Product Name: 8BAB` or similar.
+>
+> If your board dmi as found by dmidecode is in the [hp-wmi driver](https://github.com/torvalds/linux/blob/37816488247ddddbc3de113c78c83572274b1e2e/drivers/platform/x86/hp/hp-wmi.c#L65C3-L65C49) it should work fine.
+> If not you can patch the kernel module to add support for your board. I did this for my board you can read about it [here](https://noahpro99.github.io/content/how-i-ended-up-sending-in-my-first-linux-kernel-patch).
 
 ### NixOS Users
 
@@ -61,7 +67,7 @@ Download the latest AppImage release from the [Releases page](https://github.com
 chmod +x omenix*.AppImage
 
 sudo ./omenix-daemon.AppImage
-./omenix-gui.AppImage
+./omenix.AppImage
 ```
 
-some distributions may require `fuse` to be installed.
+Some distributions may require `fuse` to be installed such as Arch Linux.
