@@ -1,4 +1,4 @@
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use tracing::{debug, info, warn};
 use tray_icon::{
     TrayIconBuilder, TrayIconEvent,
@@ -65,8 +65,8 @@ impl TrayManager {
 
         info!("System tray icon created successfully");
 
-        Ok(Self { 
-            tray_icon, 
+        Ok(Self {
+            tray_icon,
             client,
             cached_state: Arc::new(Mutex::new(None)),
         })
@@ -131,29 +131,13 @@ impl TrayManager {
             Submenu::with_items(&perf_menu_label, true, &[&perf_balanced, &perf_performance])
                 .expect("Failed to create performance submenu");
 
-        // Temperature display
-        let temp_display = if let Some(temp) = state.temperature {
-            format!("🌡️ Temperature: {}°C", temp / 1000)
-        } else {
-            "🌡️ Temperature: Unknown".to_string()
-        };
-
-        let temp_item = MenuItem::new(&temp_display, false, None);
-
         // Quit item
         let quit_id = MenuId::new(QUIT_ID);
         let quit = MenuItem::with_id(quit_id, "Quit", true, None);
         let separator = PredefinedMenuItem::separator();
 
-        Menu::with_items(&[
-            &fan_submenu,
-            &perf_submenu,
-            &separator,
-            &temp_item,
-            &separator,
-            &quit,
-        ])
-        .expect("Failed to create menu")
+        Menu::with_items(&[&fan_submenu, &perf_submenu, &separator, &separator, &quit])
+            .expect("Failed to create menu")
     }
 
     fn create_menu(client: &DaemonClient) -> Menu {
@@ -179,13 +163,13 @@ impl TrayManager {
             let should_update = match &*cached {
                 Some(old_state) => {
                     // Compare states to see if update is needed
-                    old_state.fan_mode != current_state.fan_mode 
+                    old_state.fan_mode != current_state.fan_mode
                         || old_state.performance_mode != current_state.performance_mode
                         || old_state.temperature != current_state.temperature
                 }
                 None => true, // First time, always update
             };
-            
+
             if should_update {
                 debug!("State changed, updating menu");
                 let new_menu = Self::create_menu_with_state(&current_state);
