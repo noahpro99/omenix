@@ -1,7 +1,9 @@
+use clap::{CommandFactory, Parser};
+use clap_config::ClapConfig;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -13,10 +15,23 @@ use omenix::types::{FanMode, HardwareFanMode, PerformanceMode};
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
 const FAN_CONTROL_PATH: &str = "/sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable";
 const PERFORMANCE_PROFILE_PATH: &str = "/sys/firmware/acpi/platform_profile";
-const TEMP_THRESHOLD: i32 = 75000; // 75°C in millicelsius
-const MAX_FAN_WRITE_INTERVAL: Duration = Duration::from_secs(100); // <120 seconds
-const TEMP_CHECK_INTERVAL: Duration = Duration::from_secs(5);
-const CONSECUTIVE_HIGH_TEMP_LIMIT: u32 = 3;
+const CONFIG_FILE_PATH: &str = "/etc/omenix-daemon.yaml";
+
+#[derive(ClapConfig, Parser, Debug, Clone)]
+pub struct AppConfig {
+    /// Temperature threshold in Celsius to trigger max fan mode in Auto mode
+    #[clap(long, default_value = "75")]
+    temp_threshold: i32,
+    /// Number of consecutive high temperature readings to trigger max fan mode in Auto mode
+    #[clap(long, default_value = "3")]
+    consecutive_high_temp_limit: u32,
+    /// Interval in seconds to check temperature
+    #[clap(long, default_value = "5")]
+    temp_check_interval: u64,
+    /// Interval in seconds to rewrite max fan mode in Max mode
+    #[clap(long, default_value = None)]
+    max_fan_write_interval: Option<u64>,
+}
 
 #[derive(Debug)]
 pub struct DaemonState {
@@ -27,10 +42,11 @@ pub struct DaemonState {
     pub consecutive_high_temps: u32,
     pub temp_monitoring_active: bool,
     pub current_temp: Option<i32>,
+    pub config: AppConfig,
 }
 
 impl DaemonState {
-    pub fn new() -> Self {
+    pub fn new(config: &AppConfig) -> Self {
         let state = Self {
             user_mode: FanMode::Auto,
             actual_mode: HardwareFanMode::Bios,
@@ -39,15 +55,10 @@ impl DaemonState {
             consecutive_high_temps: 0,
             temp_monitoring_active: false,
             current_temp: None,
+            config: config.clone(),
         };
         info!("DaemonState initialized: {:?}", state);
         state
-    }
-}
-
-impl Default for DaemonState {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -178,12 +189,17 @@ fn handle_client_request(request: &str, state: Arc<Mutex<DaemonState>>) -> Resul
 fn set_fan_mode(state: Arc<Mutex<DaemonState>>, new_mode: FanMode) -> Result<(), String> {
     info!("Setting fan mode to: {:?}", new_mode);
 
+    let temp_threshold = {
+        let state_guard = state.lock().unwrap();
+        state_guard.config.temp_threshold * 1000
+    };
+
     let actual_mode_to_set = match new_mode {
         FanMode::Max => HardwareFanMode::Max,
         FanMode::Auto => {
             // For Auto mode, check current temperature
             match read_temperature() {
-                Ok(temp) if temp > TEMP_THRESHOLD => HardwareFanMode::Max,
+                Ok(temp) if temp > temp_threshold => HardwareFanMode::Max,
                 _ => HardwareFanMode::Bios,
             }
         }
@@ -254,9 +270,13 @@ fn set_performance_mode(
 fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
     info!("Starting temperature monitoring thread");
     thread::spawn(move || {
+        let config = {
+            let state_guard = state.lock().unwrap();
+            state_guard.config.clone()
+        };
         info!("Temperature monitoring thread started");
         loop {
-            thread::sleep(TEMP_CHECK_INTERVAL);
+            thread::sleep(Duration::from_secs(config.temp_check_interval));
 
             // Read current temperature
             let current_temp = match read_temperature() {
@@ -284,8 +304,10 @@ fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
 
                 if user_mode == FanMode::Max {
                     if let Some(last_write) = state_guard.last_fan_write {
+                        let max_fan_write_interval =
+                            Duration::from_secs(config.max_fan_write_interval.unwrap_or(100));
                         let elapsed = last_write.elapsed();
-                        if elapsed >= MAX_FAN_WRITE_INTERVAL {
+                        if elapsed >= max_fan_write_interval {
                             should_handle_max_mode = true;
                         }
                     } else {
@@ -315,22 +337,21 @@ fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
             if should_handle_auto_mode {
                 debug!("Handling auto mode temperature check");
                 let temp_celsius = current_temp / 1000;
-                let threshold_celsius = TEMP_THRESHOLD / 1000;
                 debug!(
                     "Temperature check: {}°C (threshold: {}°C)",
-                    temp_celsius, threshold_celsius
+                    temp_celsius, config.temp_threshold
                 );
 
                 let mut state_guard = state.lock().unwrap();
 
-                if current_temp > TEMP_THRESHOLD {
+                if current_temp > config.temp_threshold * 1000 {
                     state_guard.consecutive_high_temps += 1;
                     info!(
                         "High temperature detected: {}°C (count: {})",
                         temp_celsius, state_guard.consecutive_high_temps
                     );
 
-                    if state_guard.consecutive_high_temps >= CONSECUTIVE_HIGH_TEMP_LIMIT
+                    if state_guard.consecutive_high_temps >= config.consecutive_high_temp_limit
                         && state_guard.actual_mode != HardwareFanMode::Max
                     {
                         info!("Temperature consistently high, switching to max fans");
@@ -345,7 +366,9 @@ fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
                     } else if state_guard.actual_mode == HardwareFanMode::Max {
                         // In auto mode with high temp and already max - maintain 100s rule
                         if let Some(last_write) = state_guard.last_fan_write {
-                            if last_write.elapsed() >= MAX_FAN_WRITE_INTERVAL {
+                            let max_fan_write_interval =
+                                Duration::from_secs(config.max_fan_write_interval.unwrap_or(100));
+                            if last_write.elapsed() >= max_fan_write_interval {
                                 drop(state_guard);
                                 info!("Auto mode: Rewriting max fans to maintain 100s rule");
                                 if let Err(e) = write_fan_mode(HardwareFanMode::Max) {
@@ -444,6 +467,25 @@ fn main() {
         .with_line_number(true)
         .init();
 
+    let config_path = PathBuf::from(CONFIG_FILE_PATH);
+    let config_opt = if config_path.exists() {
+        let config_str = fs::read_to_string(&config_path).unwrap();
+        Some(serde_yaml::from_str(&config_str).unwrap())
+    } else {
+        None
+    };
+    info!("Using config file: {:?}", config_path);
+    info!("Using config: {:?}", config_opt);
+    let matches = <AppConfig as CommandFactory>::command().get_matches();
+    let opts = AppConfig::from_merged(matches, config_opt);
+
+    info!(
+        "Daemon starting with config: temp_threshold={}°C, consecutive_high_temp_limit={}, temp_check_interval={}s, max_fan_write_interval={:?}",
+        opts.temp_threshold,
+        opts.consecutive_high_temp_limit,
+        opts.temp_check_interval,
+        opts.max_fan_write_interval
+    );
     info!("Starting Omenix Fan Control Daemon");
 
     // Check if running as root
@@ -452,7 +494,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let state = Arc::new(Mutex::new(DaemonState::new()));
+    let state = Arc::new(Mutex::new(DaemonState::new(&opts)));
 
     // Apply initial fan mode (Auto) during startup
     info!("Applying initial Auto fan mode during daemon startup");
