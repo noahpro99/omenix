@@ -4,7 +4,7 @@
 
 Fan control application for HP Omen laptops with system tray integration.
 
-![Image](readme-assets/image.png)
+![Image](https://github.com/user-attachments/assets/96de3e52-76d3-4d79-b914-2a37c10327f6)
 
 ## Features
 
