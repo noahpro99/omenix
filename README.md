@@ -22,6 +22,21 @@ In order for Omenix to work, you need to have `hp-wmi` kernel module loaded whic
 > If your board dmi as found by dmidecode is in the [hp-wmi driver](https://github.com/torvalds/linux/blob/37816488247ddddbc3de113c78c83572274b1e2e/drivers/platform/x86/hp/hp-wmi.c#L65C3-L65C49) it should work fine.
 > If not you can patch the kernel module to add support for your board. I did this for my board you can read about it [here](https://noahpro99.github.io/content/how-i-ended-up-sending-in-my-first-linux-kernel-patch).
 
+## Configuration
+
+Omenix can optionally be configured via a YAML configuration file at `/etc/omenix-daemon.yaml`. The daemon supports the following options:
+
+Defaults and example configuration file:
+
+```yaml
+temp_threshold_high: 75 # Temperature in Celsius to trigger max fan mode
+temp_threshold_low: 70 # Hysteresis to avoid rapid switching
+consecutive_high_temp_limit: 3 # Number of consecutive high temp readings to trigger max fan mode
+consecutive_low_temp_limit: 3 # Number of consecutive low temp readings to switch back to BIOS control
+temp_check_interval: 5 # Check temperature every x seconds
+# max_fan_write_interval: 120 # Set to 120 seconds to rewrite max fan mode every 2 minutes to avoid BIOS resetting it if needed (this is off by default)
+```
+
 ### NixOS Users
 
 Add to your system configuration:

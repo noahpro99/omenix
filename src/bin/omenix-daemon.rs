@@ -21,10 +21,16 @@ const CONFIG_FILE_PATH: &str = "/etc/omenix-daemon.yaml";
 pub struct AppConfig {
     /// Temperature threshold in Celsius to trigger max fan mode in Auto mode
     #[clap(long, default_value = "75")]
-    temp_threshold: i32,
+    temp_threshold_high: i32,
+    /// Temperature threshold in Celsius to allow switching back to BIOS control when fans are on max
+    #[clap(long, default_value = "70")]
+    temp_threshold_low: i32,
     /// Number of consecutive high temperature readings to trigger max fan mode in Auto mode
     #[clap(long, default_value = "3")]
     consecutive_high_temp_limit: u32,
+    /// Number of consecutive low temperature readings to switch back to BIOS control when fans are on max
+    #[clap(long, default_value = "3")]
+    consecutive_low_temp_limit: u32,
     /// Interval in seconds to check temperature
     #[clap(long, default_value = "5")]
     temp_check_interval: u64,
@@ -40,6 +46,7 @@ pub struct DaemonState {
     pub performance_mode: PerformanceMode,
     pub last_fan_write: Option<Instant>,
     pub consecutive_high_temps: u32,
+    pub consecutive_low_temps: u32,
     pub temp_monitoring_active: bool,
     pub current_temp: Option<i32>,
     pub config: AppConfig,
@@ -53,6 +60,7 @@ impl DaemonState {
             performance_mode: PerformanceMode::Performance,
             last_fan_write: None,
             consecutive_high_temps: 0,
+            consecutive_low_temps: 0,
             temp_monitoring_active: false,
             current_temp: None,
             config: config.clone(),
@@ -191,7 +199,7 @@ fn set_fan_mode(state: Arc<Mutex<DaemonState>>, new_mode: FanMode) -> Result<(),
 
     let temp_threshold = {
         let state_guard = state.lock().unwrap();
-        state_guard.config.temp_threshold * 1000
+        state_guard.config.temp_threshold_high * 1000
     };
 
     let actual_mode_to_set = match new_mode {
@@ -303,16 +311,18 @@ fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
                 user_mode = state_guard.user_mode;
 
                 if user_mode == FanMode::Max {
-                    if let Some(last_write) = state_guard.last_fan_write {
-                        let max_fan_write_interval =
-                            Duration::from_secs(config.max_fan_write_interval.unwrap_or(100));
-                        let elapsed = last_write.elapsed();
-                        if elapsed >= max_fan_write_interval {
+                    if let Some(interval) = config.max_fan_write_interval {
+                        if let Some(last_write) = state_guard.last_fan_write {
+                            let max_fan_write_interval = Duration::from_secs(interval);
+                            let elapsed = last_write.elapsed();
+                            if elapsed >= max_fan_write_interval {
+                                should_handle_max_mode = true;
+                            }
+                        } else {
                             should_handle_max_mode = true;
                         }
-                    } else {
-                        should_handle_max_mode = true;
                     }
+                    // If max_fan_write_interval is None, don't rewrite max mode
                 }
 
                 if user_mode == FanMode::Auto && state_guard.temp_monitoring_active {
@@ -338,59 +348,91 @@ fn start_temperature_monitor(state: Arc<Mutex<DaemonState>>) {
                 debug!("Handling auto mode temperature check");
                 let temp_celsius = current_temp / 1000;
                 debug!(
-                    "Temperature check: {}°C (threshold: {}°C)",
-                    temp_celsius, config.temp_threshold
+                    "Temperature check: {}°C (high_threshold: {}°C, low_threshold: {}°C)",
+                    temp_celsius, config.temp_threshold_high, config.temp_threshold_low
                 );
 
                 let mut state_guard = state.lock().unwrap();
 
-                if current_temp > config.temp_threshold * 1000 {
-                    state_guard.consecutive_high_temps += 1;
-                    info!(
-                        "High temperature detected: {}°C (count: {})",
-                        temp_celsius, state_guard.consecutive_high_temps
-                    );
+                if state_guard.actual_mode != HardwareFanMode::Max {
+                    // Not in MAX mode - check for going to MAX
+                    if current_temp > config.temp_threshold_high * 1000 {
+                        state_guard.consecutive_high_temps += 1;
+                        info!(
+                            "High temperature detected: {}°C (high_count: {})",
+                            temp_celsius, state_guard.consecutive_high_temps
+                        );
 
-                    if state_guard.consecutive_high_temps >= config.consecutive_high_temp_limit
-                        && state_guard.actual_mode != HardwareFanMode::Max
-                    {
-                        info!("Temperature consistently high, switching to max fans");
-                        drop(state_guard);
-                        if let Err(e) = write_fan_mode(HardwareFanMode::Max) {
-                            error!("Failed to set max fan mode: {}", e);
-                        } else {
-                            let mut state_guard = state.lock().unwrap();
-                            state_guard.actual_mode = HardwareFanMode::Max;
-                            state_guard.last_fan_write = Some(Instant::now()); // Track for 100s rule
-                        }
-                    } else if state_guard.actual_mode == HardwareFanMode::Max {
-                        // In auto mode with high temp and already max - maintain 100s rule
-                        if let Some(last_write) = state_guard.last_fan_write {
-                            let max_fan_write_interval =
-                                Duration::from_secs(config.max_fan_write_interval.unwrap_or(100));
-                            if last_write.elapsed() >= max_fan_write_interval {
-                                drop(state_guard);
-                                info!("Auto mode: Rewriting max fans to maintain 100s rule");
-                                if let Err(e) = write_fan_mode(HardwareFanMode::Max) {
-                                    error!("Failed to maintain max fan mode: {}", e);
-                                } else {
-                                    let mut state_guard = state.lock().unwrap();
-                                    state_guard.last_fan_write = Some(Instant::now());
-                                }
+                        if state_guard.consecutive_high_temps >= config.consecutive_high_temp_limit
+                        {
+                            info!("Temperature consistently high, switching to max fans");
+                            drop(state_guard);
+                            if let Err(e) = write_fan_mode(HardwareFanMode::Max) {
+                                error!("Failed to set max fan mode: {}", e);
+                            } else {
+                                let mut state_guard = state.lock().unwrap();
+                                state_guard.actual_mode = HardwareFanMode::Max;
+                                state_guard.last_fan_write = Some(Instant::now()); // Track for 100s rule
+                                state_guard.consecutive_high_temps = 0; // Reset counter after switching
                             }
                         }
+                    } else {
+                        // Temperature not high enough - reset high counter
+                        if state_guard.consecutive_high_temps > 0 {
+                            state_guard.consecutive_high_temps = 0;
+                            debug!("Temperature normal, resetting high temperature counter");
+                        }
                     }
-                } else if state_guard.consecutive_high_temps > 0 {
-                    state_guard.consecutive_high_temps = 0;
-                    info!("Temperature normal, switching to BIOS control");
-                    if state_guard.actual_mode != HardwareFanMode::Bios {
+                } else {
+                    // In MAX mode - first maintain write interval rule if configured, then check for going back to BIOS
+                    let should_rewrite_max = if let Some(interval) = config.max_fan_write_interval {
+                        if let Some(last_write) = state_guard.last_fan_write {
+                            let max_fan_write_interval = Duration::from_secs(interval);
+                            last_write.elapsed() >= max_fan_write_interval
+                        } else {
+                            false
+                        }
+                    } else {
+                        false // Don't rewrite if interval is not configured
+                    };
+
+                    if should_rewrite_max {
                         drop(state_guard);
-                        if let Err(e) = write_fan_mode(HardwareFanMode::Bios) {
-                            error!("Failed to set BIOS fan mode: {}", e);
+                        info!("Auto mode: Rewriting max fans to maintain 100s rule");
+                        if let Err(e) = write_fan_mode(HardwareFanMode::Max) {
+                            error!("Failed to maintain max fan mode: {}", e);
                         } else {
                             let mut state_guard = state.lock().unwrap();
-                            state_guard.actual_mode = HardwareFanMode::Bios;
-                            state_guard.last_fan_write = None; // Clear since not in max mode
+                            state_guard.last_fan_write = Some(Instant::now());
+                        }
+                        continue; // Skip the rest of this iteration
+                    }
+
+                    // Now check for low temperature
+                    if current_temp <= config.temp_threshold_low * 1000 {
+                        state_guard.consecutive_low_temps += 1;
+                        info!(
+                            "Low temperature detected: {}°C (low_count: {})",
+                            temp_celsius, state_guard.consecutive_low_temps
+                        );
+
+                        if state_guard.consecutive_low_temps >= config.consecutive_low_temp_limit {
+                            info!("Temperature consistently low, switching back to BIOS control");
+                            drop(state_guard);
+                            if let Err(e) = write_fan_mode(HardwareFanMode::Bios) {
+                                error!("Failed to set BIOS fan mode: {}", e);
+                            } else {
+                                let mut state_guard = state.lock().unwrap();
+                                state_guard.actual_mode = HardwareFanMode::Bios;
+                                state_guard.last_fan_write = None; // Clear since not in max mode
+                                state_guard.consecutive_low_temps = 0; // Reset counter after switching
+                            }
+                        }
+                    } else {
+                        // Temperature not low enough - reset low counter
+                        if state_guard.consecutive_low_temps > 0 {
+                            state_guard.consecutive_low_temps = 0;
+                            debug!("Temperature not low enough, resetting low temperature counter");
                         }
                     }
                 }
@@ -480,9 +522,11 @@ fn main() {
     let opts = AppConfig::from_merged(matches, config_opt);
 
     info!(
-        "Daemon starting with config: temp_threshold={}°C, consecutive_high_temp_limit={}, temp_check_interval={}s, max_fan_write_interval={:?}",
-        opts.temp_threshold,
+        "Daemon starting with config: temp_threshold_high={}°C, temp_threshold_low={}°C, consecutive_high_temp_limit={}, consecutive_low_temp_limit={}, temp_check_interval={}s, max_fan_write_interval={:?}",
+        opts.temp_threshold_high,
+        opts.temp_threshold_low,
         opts.consecutive_high_temp_limit,
+        opts.consecutive_low_temp_limit,
         opts.temp_check_interval,
         opts.max_fan_write_interval
     );
