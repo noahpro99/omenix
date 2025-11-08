@@ -13,7 +13,38 @@ Fan control application for HP Omen laptops with system tray integration.
 - **Daemon Architecture**: Background service with GUI frontend
 - Sets max fans every 2 mins to avoid BIOS resetting it on some laptops
 
-## Quick Start
+## Requirements
+
+### System Tray Support
+
+Omenix requires system tray support to display its icon and menu. Most desktop environments have this built-in, but some require additional setup:
+
+#### GNOME (including Bazzite, Fedora, Ubuntu)
+
+GNOME removed native system tray support. You need to install one of these extensions:
+
+**Option 1: AppIndicator Support (Recommended)**
+```bash
+# For Fedora/Bazzite (using Flatpak)
+flatpak install flathub org.gnome.Extensions
+# Then install from: https://extensions.gnome.org/extension/615/appindicator-support/
+```
+
+**Option 2: Tray Icons: Reloaded**
+```bash
+# Install from: https://extensions.gnome.org/extension/2890/tray-icons-reloaded/
+```
+
+After installing, enable the extension in the GNOME Extensions app and restart your session (log out and back in).
+
+#### Other Desktop Environments
+
+- **KDE Plasma**: System tray built-in, no setup needed
+- **XFCE**: System tray built-in, no setup needed
+- **Cinnamon**: System tray built-in, no setup needed
+- **MATE**: System tray built-in, no setup needed
+
+### Hardware Support
 
 In order for Omenix to work, you need to have `hp-wmi` kernel module loaded which should be the case for most HP laptops. You can check if it's loaded with `lsmod | grep hp_wmi`. Setting the fans to max with `echo 0 | sudo tee /sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable` also needs to work. If it doesn't, your laptop may not be supported see the note below.
 
@@ -85,3 +116,35 @@ sudo ./omenix-daemon.AppImage
 ```
 
 Some distributions may require `fuse` to be installed such as Arch Linux.
+
+## Troubleshooting
+
+### System Tray Icon Not Appearing
+
+If the Omenix icon doesn't appear in your system tray:
+
+1. **Check if the application is running**: Run `./omenix.AppImage` in a terminal and look for error messages
+2. **GNOME users**: You MUST install a system tray extension (see Requirements section above)
+3. **Verify the daemon is running**: Check that `omenix-daemon` is running with `ps aux | grep omenix-daemon`
+4. **Check logs**: Run `./omenix.AppImage` and look for messages about tray icon creation
+5. **Restart your session**: After installing GNOME extensions, log out and back in
+6. **Verify extension is enabled**: Open "Extensions" app and ensure the tray extension is turned on
+
+Common error messages:
+
+- `Failed to create system tray icon`: Your desktop doesn't support system tray icons
+  - Solution: Install the required GNOME extension (see Requirements)
+- `Cannot connect to daemon`: The daemon isn't running
+  - Solution: Run `sudo ./omenix-daemon.AppImage` in a separate terminal first
+
+### Running from Terminal
+
+Always run the GUI from a terminal to see error messages:
+
+```bash
+# Terminal 1 - Run daemon
+sudo ./omenix-daemon.AppImage
+
+# Terminal 2 - Run GUI (you should see logs here)
+./omenix.AppImage
+```

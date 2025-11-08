@@ -51,19 +51,42 @@ impl TrayManager {
             (rgba, width, height)
         };
         let icon = tray_icon::Icon::from_rgba(icon_rgba, icon_width, icon_height)
-            .expect("Failed to open icon");
+            .map_err(|e| format!("Failed to create icon from RGBA data: {}", e))?;
 
         // Create initial menu
         let menu = Self::create_menu(&client);
 
+        info!("Attempting to create system tray icon...");
+        info!("Note: System tray support requires a compatible desktop environment");
+        info!("GNOME users: Install 'AppIndicator and KStatusNotifierItem Support' extension");
+        info!("GNOME users: Or install 'Tray Icons: Reloaded' extension");
+        
         let tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("Omenix - Fan Control")
             .with_icon(icon)
             .build()
-            .expect("Failed to create tray icon");
+            .map_err(|e| {
+                format!(
+                    "Failed to create system tray icon: {}\n\
+                    \n\
+                    This usually means your desktop environment doesn't support system tray icons.\n\
+                    \n\
+                    For GNOME-based desktops (including Bazzite):\n\
+                    1. Install the 'AppIndicator and KStatusNotifierItem Support' extension from:\n\
+                       https://extensions.gnome.org/extension/615/appindicator-support/\n\
+                    2. Or install 'Tray Icons: Reloaded' extension from:\n\
+                       https://extensions.gnome.org/extension/2890/tray-icons-reloaded/\n\
+                    3. Make sure the extension is enabled in GNOME Extensions app\n\
+                    4. You may need to restart your session after installing the extension\n\
+                    \n\
+                    For other desktops: Ensure your system tray/notification area is enabled\n\
+                    \n\
+                    Original error: {}", e, e
+                )
+            })?;
 
-        info!("System tray icon created successfully");
+        info!("✓ System tray icon created successfully");
 
         Ok(Self {
             tray_icon,
@@ -103,7 +126,7 @@ impl TrayManager {
 
         let fan_submenu =
             Submenu::with_items(&fan_menu_label, true, &[&fan_max, &fan_auto, &fan_bios])
-                .expect("Failed to create fan submenu");
+                .unwrap_or_else(|e| panic!("Failed to create fan submenu: {}", e));
 
         // Performance mode submenu
         let perf_current_mode = state.performance_mode;
@@ -129,7 +152,7 @@ impl TrayManager {
 
         let perf_submenu =
             Submenu::with_items(&perf_menu_label, true, &[&perf_balanced, &perf_performance])
-                .expect("Failed to create performance submenu");
+                .unwrap_or_else(|e| panic!("Failed to create performance submenu: {}", e));
 
         // Quit item
         let quit_id = MenuId::new(QUIT_ID);
@@ -137,7 +160,7 @@ impl TrayManager {
         let separator = PredefinedMenuItem::separator();
 
         Menu::with_items(&[&fan_submenu, &perf_submenu, &separator, &separator, &quit])
-            .expect("Failed to create menu")
+            .unwrap_or_else(|e| panic!("Failed to create menu: {}", e))
     }
 
     fn create_menu(client: &DaemonClient) -> Menu {

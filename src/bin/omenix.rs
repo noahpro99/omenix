@@ -40,7 +40,16 @@ fn main() {
     info!("Connected to daemon successfully");
 
     // Create tray manager
-    let mut tray_manager = TrayManager::new().expect("Failed to create tray manager");
+    let mut tray_manager = match TrayManager::new() {
+        Ok(manager) => manager,
+        Err(e) => {
+            error!("Failed to create tray manager: {}", e);
+            error!("");
+            error!("Omenix requires system tray support to function.");
+            error!("Please check the error message above for instructions on how to enable it.");
+            std::process::exit(1);
+        }
+    };
 
     let (tx, rx) = mpsc::channel();
     let (tx_quit, rx_quit) = mpsc::channel();
