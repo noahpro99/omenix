@@ -85,3 +85,53 @@ sudo ./omenix-daemon.AppImage
 ```
 
 Some distributions may require `fuse` to be installed such as Arch Linux.
+
+<details>
+<summary><strong>Run App On Systemd Startup (Non-NixOS)</strong></summary>
+
+1. Move the AppImages somewhere persistent, e.g. `/usr/local/bin/omenix.AppImage` and `/usr/local/bin/omenix-daemon.AppImage`, and make sure they are executable (`chmod +x`).
+2. Create `/etc/systemd/system/omenix-daemon.service` (as root):
+
+```ini
+[Unit]
+Description=Omenix Fan Control Daemon
+After=multi-user.target
+
+[Service]
+ExecStart=/usr/local/bin/omenix-daemon.AppImage
+Restart=on-failure
+User=root
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3. Reload and enable the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now omenix-daemon.service
+```
+
+Optionally start the tray UI automatically for your user session by placing this in `~/.config/systemd/user/omenix.service`:
+
+```ini
+[Unit]
+Description=Omenix Tray UI
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/local/bin/omenix.AppImage
+Restart=no
+
+[Install]
+WantedBy=graphical-session.target
+```
+
+Then enable it with:
+
+```bash
+systemctl --user enable --now omenix.service
+```
+
+</details>
