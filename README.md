@@ -127,6 +127,7 @@ sudo cp ./omenix.AppImage /usr/local/bin/omenix.AppImage
 [Unit]
 Description=Omenix Tray UI
 After=graphical-session.target
+Requires=omenix-daemon.service
 
 [Service]
 ExecStart=/usr/local/bin/omenix.AppImage
