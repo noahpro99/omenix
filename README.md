@@ -89,8 +89,10 @@ Some distributions may require `fuse` to be installed such as Arch Linux.
 <details>
 <summary><strong>Run App On Systemd Startup (Non-NixOS)</strong></summary>
 
-1. Move the AppImages somewhere persistent, e.g. `/usr/local/bin/omenix.AppImage` and `/usr/local/bin/omenix-daemon.AppImage`, and make sure they are executable (`chmod +x`).
-2. Create `/etc/systemd/system/omenix-daemon.service` (as root):
+```bash
+sudo cp ./omenix-daemon.AppImage /usr/local/bin/omenix-daemon.AppImage
+sudoedit /etc/systemd/system/omenix-daemon.service # copy the content below
+```
 
 ```ini
 [Unit]
@@ -106,14 +108,20 @@ User=root
 WantedBy=multi-user.target
 ```
 
-3. Reload and enable the service:
+1. Reload and enable the service:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now omenix-daemon.service
 ```
 
-Optionally start the tray UI automatically for your user session by placing this in `~/.config/systemd/user/omenix.service`:
+Optionally start the tray UI automatically for your user session:
+
+```bash
+mkdir -p ~/.config/systemd/user
+nano ~/.config/systemd/user/omenix.service # copy the content below
+sudo cp ./omenix.AppImage /usr/local/bin/omenix.AppImage
+```
 
 ```ini
 [Unit]
@@ -128,10 +136,11 @@ Restart=no
 WantedBy=graphical-session.target
 ```
 
-Then enable it with:
+Then enable it and reboot so the display manager starts it:
 
 ```bash
 systemctl --user enable --now omenix.service
+reboot
 ```
 
 </details>
