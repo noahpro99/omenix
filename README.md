@@ -136,11 +136,11 @@ Restart=no
 WantedBy=graphical-session.target
 ```
 
-Then enable it and reboot so the display manager starts it:
+Then reload and enable the user service:
 
 ```bash
+systemctl --user daemon-reload
 systemctl --user enable --now omenix.service
-reboot
 ```
 
 </details>
