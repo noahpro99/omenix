@@ -1,12 +1,12 @@
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use tracing::{debug, info, warn};
 use tray_icon::{
     TrayIconBuilder, TrayIconEvent,
     menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu},
 };
 
-use crate::client::DaemonClient;
-use crate::types::{FanMode, PerformanceMode, SystemState, TrayMessage};
+use omenix_lib::client::DaemonClient;
+use omenix_lib::types::{FanMode, PerformanceMode, SystemState, TrayMessage};
 
 // Define menu IDs as constants
 const FAN_MAX_ID: &str = "fan_max";

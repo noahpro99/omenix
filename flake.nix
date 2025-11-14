@@ -8,7 +8,7 @@
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
 
-      libs = nixpkgs.lib.makeLibraryPath (
+      guiLibs = nixpkgs.lib.makeLibraryPath (
         with pkgs;
         [
           libayatana-appindicator
@@ -20,23 +20,29 @@
       src = ./.;
       cargoLock.lockFile = ./Cargo.lock;
 
-      nativeBuildInputs = with pkgs; [
+      guiNativeBuildInputs = with pkgs; [
         pkg-config
         makeWrapper
       ];
 
-      buildInputs = with pkgs; [
+      guiBuildInputs = with pkgs; [
         gtk3
         libayatana-appindicator
         openssl
       ];
 
-      postInstall = ''
+      daemonNativeBuildInputs = [ ];
+
+      daemonBuildInputs = with pkgs; [
+        openssl
+      ];
+
+      guiPostInstall = ''
         mkdir -p $out/share/omenix/assets
         cp -r assets/* $out/share/omenix/assets/
         wrapProgram $out/bin/* \
          --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
-         --set LD_LIBRARY_PATH "${libs}"
+         --set LD_LIBRARY_PATH "${guiLibs}"
       '';
 
       meta = with nixpkgs.lib; {
@@ -51,11 +57,10 @@
         inherit
           version
           src
-          cargoLock
-          nativeBuildInputs
-          buildInputs
-          postInstall
-          ;
+          cargoLock;
+        nativeBuildInputs = guiNativeBuildInputs;
+        buildInputs = guiBuildInputs;
+        postInstall = guiPostInstall;
         cargoBuildFlags = [
           "--bin"
           "omenix"
@@ -71,11 +76,9 @@
         inherit
           version
           src
-          cargoLock
-          nativeBuildInputs
-          buildInputs
-          postInstall
-          ;
+          cargoLock;
+        nativeBuildInputs = daemonNativeBuildInputs;
+        buildInputs = daemonBuildInputs;
         cargoBuildFlags = [
           "--bin"
           "omenix-daemon"
@@ -158,7 +161,7 @@
         };
 
       devShells.${system}.default = pkgs.mkShell {
-        inherit buildInputs;
+        buildInputs = guiBuildInputs;
         nativeBuildInputs = with pkgs; [
           cargo
           rustc
@@ -173,7 +176,7 @@
         ];
 
         shellHook = ''
-          export LD_LIBRARY_PATH="${libs}:$LD_LIBRARY_PATH"
+          export LD_LIBRARY_PATH="${guiLibs}:$LD_LIBRARY_PATH"
           export OMENIX_ASSETS_DIR="$(pwd)/assets"
           echo "Development environment loaded!"
           echo "Assets directory: $OMENIX_ASSETS_DIR"

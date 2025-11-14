@@ -1,10 +1,12 @@
+mod tray;
+
 use gtk::traits::GtkSettingsExt;
 use std::sync::mpsc;
 use tracing::{debug, error, info};
 
-use omenix::client::DaemonClient;
-use omenix::tray::TrayManager;
-use omenix::types::TrayMessage;
+use crate::tray::TrayManager;
+use omenix_lib::client::DaemonClient;
+use omenix_lib::types::TrayMessage;
 
 fn main() {
     // Initialize tracing subscriber for structured logging
