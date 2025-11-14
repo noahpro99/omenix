@@ -17,6 +17,8 @@ const PERF_POWER_SAVER_ID: &str = "perf_power_saver";
 const PERF_BALANCED_ID: &str = "perf_balanced";
 const PERF_PERFORMANCE_ID: &str = "perf_performance";
 
+const ERROR_MESSAGE_ID: &str = "error";
+
 const QUIT_ID: &str = "quit";
 
 pub struct TrayManager {
@@ -143,55 +145,87 @@ impl TrayManager {
         )
         .expect("Failed to create performance submenu");
 
+        // error message item (disabled)
+        let error_message_id = MenuId::new(ERROR_MESSAGE_ID);
+        let error_message = MenuItem::with_id(
+            error_message_id,
+            state
+                .error_message
+                .clone()
+                .unwrap_or_else(|| "Connected".to_string()),
+            false,
+            None,
+        );
+
         // Quit item
         let quit_id = MenuId::new(QUIT_ID);
         let quit = MenuItem::with_id(quit_id, "Quit", true, None);
         let separator = PredefinedMenuItem::separator();
 
-        Menu::with_items(&[&fan_submenu, &perf_submenu, &separator, &separator, &quit])
-            .expect("Failed to create menu")
+        Menu::with_items(&[
+            &fan_submenu,
+            &perf_submenu,
+            &separator,
+            &separator,
+            &error_message,
+            &quit,
+        ])
+        .expect("Failed to create menu")
     }
 
     fn create_menu(client: &DaemonClient) -> Menu {
         // Get current state to show in menu
-        let current_state = client.get_current_state().ok();
-
-        if let Some(state) = current_state {
-            Self::create_menu_with_state(&state)
-        } else {
-            // Fallback for when we can't get state
-            Self::create_menu_with_state(&SystemState {
-                fan_mode: FanMode::Auto,
-                performance_mode: PerformanceMode::Balanced,
-                temperature: None,
-            })
+        match client.get_current_state() {
+            Ok(state) => Self::create_menu_with_state(&state),
+            Err(e) => {
+                // Fallback for when we can't get state
+                Self::create_menu_with_state(&SystemState {
+                    fan_mode: FanMode::Auto,
+                    performance_mode: PerformanceMode::Balanced,
+                    temperature: None,
+                    error_message: Some(format!("Unable to connect to daemon: {}", e)),
+                })
+            }
         }
     }
 
     fn update_menu(&mut self) {
         // Check if state has actually changed before recreating menu
-        if let Ok(current_state) = self.client.get_current_state() {
-            let mut cached = self.cached_state.lock().unwrap();
-            let should_update = match &*cached {
-                Some(old_state) => {
-                    // Compare states to see if update is needed
-                    old_state.fan_mode != current_state.fan_mode
-                        || old_state.performance_mode != current_state.performance_mode
-                        || old_state.temperature != current_state.temperature
-                }
-                None => true, // First time, always update
-            };
+        let mut cached = self.cached_state.lock().unwrap();
+        match self.client.get_current_state() {
+            Ok(current_state) => {
+                let should_update = match &*cached {
+                    Some(old_state) => {
+                        // Compare states to see if update is needed
+                        old_state.fan_mode != current_state.fan_mode
+                            || old_state.performance_mode != current_state.performance_mode
+                            || old_state.temperature != current_state.temperature
+                    }
+                    None => true, // First time, always update
+                };
 
-            if should_update {
-                debug!("State changed, updating menu");
-                let new_menu = Self::create_menu_with_state(&current_state);
-                self.tray_icon.set_menu(Some(Box::new(new_menu)));
-                *cached = Some(current_state);
-            } else {
-                debug!("State unchanged, skipping menu update");
+                if should_update {
+                    debug!("State changed, updating menu");
+                    let new_menu = Self::create_menu_with_state(&current_state);
+                    self.tray_icon.set_menu(Some(Box::new(new_menu)));
+                    *cached = Some(current_state);
+                } else {
+                    debug!("State unchanged, skipping menu update");
+                }
             }
-        } else {
-            debug!("Failed to get current state, skipping menu update");
+            Err(e) => {
+                // set error message in state
+                debug!("Error getting current state: {}", e);
+                let error_state = SystemState {
+                    fan_mode: FanMode::Auto,
+                    performance_mode: PerformanceMode::Balanced,
+                    temperature: None,
+                    error_message: Some(e.to_string()),
+                };
+                let new_menu = Self::create_menu_with_state(&error_state);
+                self.tray_icon.set_menu(Some(Box::new(new_menu)));
+                *cached = Some(error_state);
+            }
         }
     }
 

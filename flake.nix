@@ -163,6 +163,7 @@
           cargo
           rustc
           rust-analyzer
+          rustfmt
           clippy
           bashInteractive
           gcc

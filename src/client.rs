@@ -149,6 +149,7 @@ impl DaemonClient {
                 fan_mode,
                 performance_mode,
                 temperature,
+                error_message: None,
             })
         } else if response.starts_with("ERROR:") {
             let error_msg = response.strip_prefix("ERROR:").unwrap_or(&response).trim();

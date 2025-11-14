@@ -97,6 +97,7 @@ pub struct SystemState {
     pub fan_mode: FanMode,
     pub performance_mode: PerformanceMode,
     pub temperature: Option<i32>,
+    pub error_message: Option<String>,
 }
 
 /// Messages sent from GUI to daemon

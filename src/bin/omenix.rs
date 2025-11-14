@@ -27,19 +27,6 @@ fn main() {
     };
     settings.set_gtk_application_prefer_dark_theme(true);
 
-    // Create daemon client
-    let client = DaemonClient::new();
-
-    // Check if daemon is running
-    if !client.is_daemon_running() {
-        error!("Cannot connect to daemon. Please make sure 'omenix-daemon' is running as root.");
-        error!("Run: sudo omenix-daemon");
-        std::process::exit(1);
-    }
-
-    info!("Connected to daemon successfully");
-
-    // Create tray manager
     let mut tray_manager = TrayManager::new().expect("Failed to create tray manager");
 
     let (tx, rx) = mpsc::channel();
@@ -48,7 +35,7 @@ fn main() {
     // Clone tray_manager for updates (we'll use messages to coordinate)
     let (tx_refresh, rx_refresh) = mpsc::channel::<()>();
 
-    // Handle messages
+    // Handle messages from the tray menu and relay to daemon client
     let tx_quit_clone = tx_quit.clone();
     let tx_refresh_clone = tx_refresh.clone();
     std::thread::spawn(move || {
