@@ -63,6 +63,7 @@ impl fmt::Display for FanStatus {
 /// Performance modes that write to /sys/firmware/acpi/platform_profile
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PerformanceMode {
+    PowerSaver,
     Balanced,
     Performance,
 }
@@ -70,6 +71,7 @@ pub enum PerformanceMode {
 impl fmt::Display for PerformanceMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            PerformanceMode::PowerSaver => write!(f, "power-saver"),
             PerformanceMode::Balanced => write!(f, "balanced"),
             PerformanceMode::Performance => write!(f, "performance"),
         }
@@ -81,6 +83,7 @@ impl std::str::FromStr for PerformanceMode {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            "power-saver" => Ok(PerformanceMode::PowerSaver),
             "balanced" => Ok(PerformanceMode::Balanced),
             "performance" => Ok(PerformanceMode::Performance),
             _ => Err(format!("Invalid performance mode: {}", s)),

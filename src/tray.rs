@@ -13,6 +13,7 @@ const FAN_MAX_ID: &str = "fan_max";
 const FAN_AUTO_ID: &str = "fan_auto";
 const FAN_BIOS_ID: &str = "fan_bios";
 
+const PERF_POWER_SAVER_ID: &str = "perf_power_saver";
 const PERF_BALANCED_ID: &str = "perf_balanced";
 const PERF_PERFORMANCE_ID: &str = "perf_performance";
 
@@ -109,9 +110,15 @@ impl TrayManager {
         let perf_current_mode = state.performance_mode;
         let perf_menu_label = format!("⚡ Performance: {}", perf_current_mode);
 
+        let perf_power_saver_id = MenuId::new(PERF_POWER_SAVER_ID);
         let perf_balanced_id = MenuId::new(PERF_BALANCED_ID);
         let perf_performance_id = MenuId::new(PERF_PERFORMANCE_ID);
 
+        let perf_power_saver_label = if perf_current_mode == PerformanceMode::PowerSaver {
+            "• Power Saver"
+        } else {
+            "Power Saver"
+        };
         let perf_balanced_label = if perf_current_mode == PerformanceMode::Balanced {
             "• Balanced"
         } else {
@@ -123,13 +130,18 @@ impl TrayManager {
             "Performance"
         };
 
+        let perf_power_saver =
+            MenuItem::with_id(perf_power_saver_id, perf_power_saver_label, true, None);
         let perf_balanced = MenuItem::with_id(perf_balanced_id, perf_balanced_label, true, None);
         let perf_performance =
             MenuItem::with_id(perf_performance_id, perf_performance_label, true, None);
 
-        let perf_submenu =
-            Submenu::with_items(&perf_menu_label, true, &[&perf_balanced, &perf_performance])
-                .expect("Failed to create performance submenu");
+        let perf_submenu = Submenu::with_items(
+            &perf_menu_label,
+            true,
+            &[&perf_power_saver, &perf_balanced, &perf_performance],
+        )
+        .expect("Failed to create performance submenu");
 
         // Quit item
         let quit_id = MenuId::new(QUIT_ID);
@@ -210,6 +222,11 @@ impl TrayManager {
                     FAN_BIOS_ID => {
                         info!("BIOS Default menu item clicked");
                         let _ = tx.send(TrayMessage::SetMode(FanMode::Bios));
+                    }
+                    PERF_POWER_SAVER_ID => {
+                        info!("Power Saver performance mode clicked");
+                        let _ =
+                            tx.send(TrayMessage::SetPerformanceMode(PerformanceMode::PowerSaver));
                     }
                     PERF_BALANCED_ID => {
                         info!("Balanced performance mode clicked");
