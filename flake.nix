@@ -57,7 +57,8 @@
         inherit
           version
           src
-          cargoLock;
+          cargoLock
+          ;
         nativeBuildInputs = guiNativeBuildInputs;
         buildInputs = guiBuildInputs;
         postInstall = guiPostInstall;
@@ -76,7 +77,8 @@
         inherit
           version
           src
-          cargoLock;
+          cargoLock
+          ;
         nativeBuildInputs = daemonNativeBuildInputs;
         buildInputs = daemonBuildInputs;
         cargoBuildFlags = [
