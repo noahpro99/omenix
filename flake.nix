@@ -31,19 +31,13 @@
         openssl
       ];
 
-      daemonNativeBuildInputs = [ ];
+      daemonNativeBuildInputs = with pkgs; [
+        pkg-config
+      ];
 
       daemonBuildInputs = with pkgs; [
         openssl
       ];
-
-      guiPostInstall = ''
-        mkdir -p $out/share/omenix/assets
-        cp -r assets/* $out/share/omenix/assets/
-        wrapProgram $out/bin/* \
-         --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
-         --set LD_LIBRARY_PATH "${guiLibs}"
-      '';
 
       meta = with nixpkgs.lib; {
         description = "Fan control application for HP Omen laptops";
@@ -52,40 +46,62 @@
         platforms = platforms.linux;
       };
 
-      omenix = pkgs.rustPlatform.buildRustPackage {
-        pname = "omenix";
+      workspace = pkgs.rustPlatform.buildRustPackage {
+        pname = "omenix-workspace";
         inherit
           version
           src
           cargoLock
           ;
+        nativeBuildInputs = guiNativeBuildInputs ++ daemonNativeBuildInputs;
+        buildInputs = guiBuildInputs ++ daemonBuildInputs;
+        cargoBuildFlags = [
+          "--workspace"
+          "--all-features"
+        ];
+        doCheck = false;
+        buildType = "release";
+      };
+
+      omenix = pkgs.stdenv.mkDerivation {
+        pname = "omenix";
+        inherit version;
+
+        dontUnpack = true;
         nativeBuildInputs = guiNativeBuildInputs;
         buildInputs = guiBuildInputs;
-        postInstall = guiPostInstall;
-        cargoBuildFlags = [
-          "--bin"
-          "omenix"
-        ];
-        buildType = "release";
+
+        installPhase = ''
+          mkdir -p $out/bin
+          mkdir -p $out/share/omenix/assets
+
+          ln -s ${workspace}/bin/omenix $out/bin/omenix
+
+          cp -r ${src}/assets/* $out/share/omenix/assets/
+
+          wrapProgram $out/bin/omenix \
+            --set OMENIX_ASSETS_DIR "$out/share/omenix/assets" \
+            --set LD_LIBRARY_PATH "${guiLibs}"
+        '';
+
         meta = meta // {
           mainProgram = "omenix";
         };
       };
 
-      omenix-daemon = pkgs.rustPlatform.buildRustPackage {
+      omenix-daemon = pkgs.stdenv.mkDerivation {
         pname = "omenix-daemon";
-        inherit
-          version
-          src
-          cargoLock
-          ;
+        inherit version;
+
+        dontUnpack = true;
         nativeBuildInputs = daemonNativeBuildInputs;
         buildInputs = daemonBuildInputs;
-        cargoBuildFlags = [
-          "--bin"
-          "omenix-daemon"
-        ];
-        buildType = "release";
+
+        installPhase = ''
+          mkdir -p $out/bin
+          ln -s ${workspace}/bin/omenix-daemon $out/bin/omenix-daemon
+        '';
+
         meta = meta // {
           mainProgram = "omenix-daemon";
         };
