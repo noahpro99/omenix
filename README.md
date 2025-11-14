@@ -11,7 +11,7 @@ Fan control application for HP Omen laptops with system tray integration.
 - **Fan Control**: Auto, Max Performance, or BIOS Default modes
 - **System Tray**: Easy access via system tray icon
 - **Daemon Architecture**: Background service with GUI frontend
-- Sets max fans every 2 mins to avoid BIOS resetting it on some laptops
+- Can be configured to set max fans every 2 mins to avoid BIOS resetting it on some laptops
 
 ## Quick Start
 
