@@ -178,6 +178,40 @@
           ];
         };
 
+      homeManagerModules.default =
+        { config, lib, ... }:
+        with lib;
+        {
+          options.services.omenix = {
+            enable = mkEnableOption "Omenix fan control gui";
+
+            package = mkOption {
+              type = types.package;
+              default = omenix;
+              description = "The Omenix package to use.";
+            };
+          };
+
+          config = mkIf config.services.omenix.enable {
+            systemd.user.services.omenix = {
+              Unit = {
+                Description = "Omenix Fan Control GUI";
+                After = [ "graphical-session.target" ];
+              };
+
+              Service = {
+                ExecStart = "${config.services.omenix.package}/bin/omenix";
+                Restart = "on-failure";
+                RestartSec = 5;
+              };
+
+              Install = {
+                WantedBy = [ "graphical-session.target" ];
+              };
+            };
+          };
+        };
+
       devShells.${system}.default = pkgs.mkShell {
         buildInputs = guiBuildInputs;
         nativeBuildInputs = with pkgs; [

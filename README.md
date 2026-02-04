@@ -29,8 +29,8 @@ Add to your system configuration:
 {
   inputs.omenix.url = "github:noahpro99/omenix";
 
-  # In your system configuration:
-  packages.omenix.enable = true;
+  programs.omenix.enable = true; # Adds omenix binary to packages
+  services.omenix-daemon.enable = true; # Enable omenix-daemon as systemd service
 }
 ```
 
@@ -44,6 +44,17 @@ If you have a desktop environment like hyprland:
 
 ```
 exec-once = omenix
+```
+
+### Home Manager Users
+
+Add the Home Manager module and enable the user service:
+
+```nix
+{
+  imports = [ inputs.omenix.homeManagerModules.default ];
+  services.omenix.enable = true;
+}
 ```
 
 ### Non-NixOS with Nix Package Manager
