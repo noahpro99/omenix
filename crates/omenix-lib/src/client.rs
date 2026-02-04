@@ -138,6 +138,8 @@ impl DaemonClient {
             // Parse performance mode from status
             let performance_mode = if status_data.contains("Performance: performance") {
                 PerformanceMode::Performance
+            } else if status_data.contains("Performance: power-saver") {
+                PerformanceMode::PowerSaver
             } else {
                 PerformanceMode::Balanced
             };

@@ -15,6 +15,7 @@ use omenix_lib::types::{FanMode, HardwareFanMode, PerformanceMode};
 const TEMP_SENSOR_PATH: &str = "/sys/class/thermal/thermal_zone*/temp";
 const FAN_CONTROL_PATH: &str = "/sys/devices/platform/hp-wmi/hwmon/hwmon*/pwm1_enable";
 const PERFORMANCE_PROFILE_PATH: &str = "/sys/firmware/acpi/platform_profile";
+const PERFORMANCE_PROFILE_CHOICES_PATH: &str = "/sys/firmware/acpi/platform_profile_choices";
 const CONFIG_FILE_PATH: &str = "/etc/omenix-daemon.yaml";
 
 #[derive(ClapConfig, Parser, Debug, Clone)]
@@ -44,6 +45,7 @@ pub struct DaemonState {
     pub user_mode: FanMode,
     pub actual_mode: HardwareFanMode,
     pub performance_mode: PerformanceMode,
+    pub performance_profile_choices: Option<[String; 3]>,
     pub last_fan_write: Option<Instant>,
     pub consecutive_high_temps: u32,
     pub consecutive_low_temps: u32,
@@ -58,6 +60,7 @@ impl DaemonState {
             user_mode: FanMode::Auto,
             actual_mode: HardwareFanMode::Bios,
             performance_mode: PerformanceMode::Performance,
+            performance_profile_choices: None,
             last_fan_write: None,
             consecutive_high_temps: 0,
             consecutive_low_temps: 0,
@@ -107,10 +110,8 @@ fn write_fan_mode(mode: HardwareFanMode) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn write_performance_mode(mode: PerformanceMode) -> Result<(), io::Error> {
-    let value = mode.to_string(); // "balanced" or "performance"
-
-    info!("Writing performance mode: {:?} (value: {})", mode, value);
+fn write_performance_mode(value: &str) -> Result<(), io::Error> {
+    info!("Writing performance mode value: {}", value);
 
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -120,8 +121,56 @@ fn write_performance_mode(mode: PerformanceMode) -> Result<(), io::Error> {
     file.write_all(value.as_bytes())?;
     file.flush()?;
 
-    info!("Successfully wrote performance mode: {:?}", mode);
+    info!("Successfully wrote performance mode value: {}", value);
     Ok(())
+}
+
+fn read_performance_profile_choices() -> Option<[String; 3]> {
+    let contents = fs::read_to_string(PERFORMANCE_PROFILE_CHOICES_PATH).ok()?;
+    let choices: Vec<String> = contents
+        .split_whitespace()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if choices.len() < 3 {
+        return None;
+    }
+
+    Some([choices[0].clone(), choices[1].clone(), choices[2].clone()])
+}
+
+fn map_mode_to_profile(mode: PerformanceMode, choices: &Option<[String; 3]>) -> String {
+    if let Some(choices) = choices {
+        match mode {
+            PerformanceMode::PowerSaver => choices[0].clone(),
+            PerformanceMode::Balanced => choices[1].clone(),
+            PerformanceMode::Performance => choices[2].clone(),
+        }
+    } else {
+        mode.to_string()
+    }
+}
+
+fn read_current_performance_mode(
+    choices: &Option<[String; 3]>,
+) -> Option<PerformanceMode> {
+    let current = fs::read_to_string(PERFORMANCE_PROFILE_PATH).ok()?;
+    let current = current.trim().to_lowercase();
+
+    if let Some(choices) = choices {
+        if current == choices[0].to_lowercase() {
+            return Some(PerformanceMode::PowerSaver);
+        }
+        if current == choices[1].to_lowercase() {
+            return Some(PerformanceMode::Balanced);
+        }
+        if current == choices[2].to_lowercase() {
+            return Some(PerformanceMode::Performance);
+        }
+    }
+
+    current.parse::<PerformanceMode>().ok()
 }
 
 #[instrument(level = "debug")]
@@ -180,11 +229,15 @@ fn handle_client_request(request: &str, state: Arc<Mutex<DaemonState>>) -> Resul
                 Some(temp) => format!("{}°C", temp / 1000),
                 None => "Unknown".to_string(),
             };
+            let performance_mode = read_current_performance_mode(
+                &state_guard.performance_profile_choices,
+            )
+                .unwrap_or(state_guard.performance_mode);
             Ok(format!(
                 "Mode: {}, Actual: {:?}, Performance: {}, Temp: {}",
                 state_guard.user_mode,
                 state_guard.actual_mode,
-                state_guard.performance_mode,
+                performance_mode,
                 temp_str
             ))
         }
@@ -261,14 +314,14 @@ fn set_performance_mode(
 ) -> Result<(), String> {
     info!("Setting performance mode to: {:?}", new_mode);
 
-    // Update state
-    {
+    let value = {
         let mut state_guard = state.lock().unwrap();
         state_guard.performance_mode = new_mode;
-    }
+        map_mode_to_profile(new_mode, &state_guard.performance_profile_choices)
+    };
 
     // Write to platform profile
-    write_performance_mode(new_mode)
+    write_performance_mode(&value)
         .map_err(|e| format!("Failed to write performance mode: {}", e))?;
 
     info!("Successfully set performance mode to: {:?}", new_mode);
@@ -539,6 +592,13 @@ fn main() {
     }
 
     let state = Arc::new(Mutex::new(DaemonState::new(&opts)));
+    {
+        let mut state_guard = state.lock().unwrap();
+        state_guard.performance_profile_choices = read_performance_profile_choices();
+        state_guard.performance_mode =
+            read_current_performance_mode(&state_guard.performance_profile_choices)
+                .unwrap_or(PerformanceMode::Performance);
+    }
 
     // Apply initial fan mode (Auto) during startup
     info!("Applying initial Auto fan mode during daemon startup");
